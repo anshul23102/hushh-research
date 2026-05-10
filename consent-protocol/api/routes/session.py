@@ -98,23 +98,67 @@ async def issue_session_token(
 
 
 @router.post("/consent/logout")
-async def logout_session(request: LogoutRequest):
+async def logout_session(
+    request: LogoutRequest,
+    token_data: dict = Depends(require_vault_owner_token),
+):
     """
     Destroy all session tokens for a user.
 
     Called when user logs out. Invalidates all active session tokens.
     External API tokens are NOT affected.
+
+    SECURITY: Requires a valid VAULT_OWNER token. Revokes the presenting
+    token immediately (in-memory) and writes REVOKED events to the DB so
+    that other Cloud Run instances stop accepting the same token.
     """
+    from hushh_mcp.consent.token import revoke_token
 
-    logger.info("session.logout")
+    if str(token_data["user_id"]) != request.userId:
+        raise HTTPException(status_code=403, detail="userId mismatch")
 
-    # In production, this would query the database for all session tokens
-    # and revoke them. For now, we just log the action.
+    logger.info("session.logout user=%s", request.userId)
+
+    # Revoke the presenting token in-memory immediately so this instance
+    # stops accepting it without waiting for a DB round-trip.
+    presenting_token: str = token_data["token"]
+    revoke_token(presenting_token)
+
+    revoked_count = 0
+    try:
+        service = ConsentDBService()
+        # Fetch all active internal session tokens (agent_id="self") and
+        # write REVOKED events so other Cloud Run instances also stop
+        # accepting them.  External API tokens are intentionally excluded.
+        active_tokens = await service.get_active_internal_tokens(
+            request.userId, agent_id="self"
+        )
+        for tok in active_tokens:
+            scope = str(tok.get("scope") or "").strip()
+            token_id = str(tok.get("token_id") or tok.get("id") or "").strip()
+            if not scope:
+                continue
+            await service.insert_event(
+                user_id=request.userId,
+                agent_id="self",
+                scope=scope,
+                action="REVOKED",
+                token_id=token_id or None,
+                metadata={"reason": "user_logout"},
+            )
+            revoked_count += 1
+    except Exception as exc:
+        # DB failure must not prevent the response — the in-memory revocation
+        # already blocks this instance.  Log for alerting.
+        logger.error("session.logout db_revocation_failed user=%s error=%s", request.userId, exc)
+
+    logger.info("session.logout completed revoked=%d", revoked_count)
+
     # The frontend should also clear sessionStorage.
-
     return {
         "status": "success",
-        "message": "Session tokens marked for revocation",
+        "message": "Session tokens revoked",
+        "revoked": revoked_count,
     }
 
 
