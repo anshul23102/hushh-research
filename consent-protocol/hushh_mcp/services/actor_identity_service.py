@@ -6,6 +6,7 @@ import logging
 import os
 import re
 import secrets
+import threading
 from datetime import datetime, timedelta, timezone
 from typing import Any, Iterable
 
@@ -19,8 +20,106 @@ logger = logging.getLogger(__name__)
 _IDENTITY_STALE_AFTER = timedelta(hours=24)
 _IDENTITY_SYNC_COOLDOWN = timedelta(minutes=5)
 _IDENTITY_SYNC_TASKS: dict[str, asyncio.Task[dict[str, Any] | None]] = {}
-_IDENTITY_SYNC_COOLDOWN_UNTIL: dict[str, datetime] = {}
 _ALIAS_CODE_PATTERN = re.compile(r"\s+")
+
+
+class _CooldownRegistry:
+    """
+    Thread-safe, TTL-bounded registry tracking per-user sync cooldown deadlines.
+
+    Problem it solves
+    -----------------
+    The previous implementation used a plain ``dict[str, datetime]`` at module
+    level.  Every unique Firebase UID that ever calls
+    ``schedule_sync_from_firebase`` adds a permanent entry.  The done-callback
+    on the background task removes the entry from ``_IDENTITY_SYNC_TASKS``, but
+    there was no corresponding cleanup for the cooldown dict.
+
+    Memory impact: a platform with 1 M distinct users accumulates
+    ``1 000 000 x ~195 B = ~190 MB`` in a long-running Cloud Run instance with
+    no relief valve.  Instances share no state, so a redeploy is the only reset.
+
+    Fix
+    ---
+    This class is a drop-in replacement for the two dict operations used by the
+    caller:
+
+    .. code-block:: python
+
+        registry.get(user_id)              # -> datetime | None
+        registry[user_id] = expiry_dt      # set cooldown deadline
+
+    Bounds
+    ~~~~~~
+    * **Lazy TTL eviction**: ``get()`` removes an entry if its deadline has
+      already passed.  Expired deadlines carry no useful information - the
+      next call is always permitted regardless.
+    * **Size cap** (default 10 000): on overflow, expired entries are pruned
+      first.  If still over capacity, the oldest-inserted entry is dropped.
+      Dropping an *unexpired* cooldown means the evicted user may trigger one
+      redundant background sync; this is safe because ``sync_from_firebase`` is
+      idempotent.
+    * **``threading.Lock``**: reads and writes are serialised.  The GIL makes
+      individual ``dict.get`` / ``dict.__setitem__`` atomic today, but the
+      check-then-act pattern (read deadline, decide whether to schedule) is not
+      atomic across two dict operations and is error-prone under GIL pressure.
+
+    Max memory footprint: ``10 000 x ~195 B = ~2 MB`` (bounded, deterministic).
+    Previous footprint:   unbounded - grew with instance lifetime.
+    """
+
+    MAX_ENTRIES: int = 10_000
+
+    def __init__(self, max_entries: int = MAX_ENTRIES) -> None:
+        if max_entries < 1:
+            raise ValueError(f"max_entries must be >= 1, got {max_entries}")
+        self._max = max_entries
+        self._data: dict[str, datetime] = {}
+        self._lock = threading.Lock()
+
+    # ------------------------------------------------------------------
+    # Public interface (drop-in for the two dict access patterns)
+    # ------------------------------------------------------------------
+
+    def get(self, key: str) -> datetime | None:
+        """Return the deadline for *key*, or ``None`` if absent or already expired."""
+        with self._lock:
+            expiry = self._data.get(key)
+            if expiry is None:
+                return None
+            if expiry <= datetime.now(timezone.utc):
+                # Lazy eviction: stale entry is useless - remove it now.
+                self._data.pop(key, None)
+                return None
+            return expiry
+
+    def __setitem__(self, key: str, value: datetime) -> None:
+        """Set (or update) the cooldown deadline for *key*."""
+        with self._lock:
+            self._data[key] = value
+            if len(self._data) <= self._max:
+                return
+            # Over capacity: prune expired entries first.
+            now = datetime.now(timezone.utc)
+            for k in [k for k, v in self._data.items() if v <= now]:
+                del self._data[k]
+            # If still over capacity, evict oldest-inserted (dict preserves
+            # insertion order since Python 3.7).
+            while len(self._data) > self._max:
+                oldest_key = next(iter(self._data))
+                del self._data[oldest_key]
+
+    def __len__(self) -> int:
+        with self._lock:
+            return len(self._data)
+
+    def clear(self) -> None:
+        """Remove all entries.  Intended for test teardown only."""
+        with self._lock:
+            self._data.clear()
+
+
+_IDENTITY_SYNC_COOLDOWN_UNTIL = _CooldownRegistry()
 
 
 class ActorIdentityAliasError(RuntimeError):
