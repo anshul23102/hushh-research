@@ -45,6 +45,14 @@ _MARKET_DATA_CACHE_TTL_SECONDS = max(
     60,
     int(os.getenv("KAI_MARKET_DATA_CACHE_TTL_SECONDS", "600") or "600"),
 )
+# Maximum number of ticker entries to keep in the in-process market-data cache.
+# Each entry holds a shallow copy of a market-data dict (~2-10 KB).
+# Default cap: 5 000 entries x ~5 KB ~ 25 MB worst-case.
+# Overridable at startup via the KAI_MARKET_DATA_CACHE_MAX env var.
+_MARKET_DATA_CACHE_MAX: int = max(
+    1,
+    int(os.getenv("KAI_MARKET_DATA_CACHE_MAX", "5000") or "5000"),
+)
 _YFINANCE_TIMEOUT_COOLDOWN_SECONDS = max(
     60,
     int(os.getenv("KAI_YFINANCE_TIMEOUT_COOLDOWN_SECONDS", "180") or "180"),
@@ -126,6 +134,20 @@ def _get_cached_market_data(cache_key: str) -> Dict[str, Any] | None:
 def _set_cached_market_data(cache_key: str, payload: Dict[str, Any], ttl_seconds: int) -> None:
     ttl = max(60, int(ttl_seconds))
     with _MARKET_DATA_CACHE_LOCK:
+        # Fast path: updating an existing key never changes the cache size.
+        if (
+            cache_key not in _MARKET_DATA_CACHE
+            and len(_MARKET_DATA_CACHE) >= _MARKET_DATA_CACHE_MAX
+        ):
+            now = time.time()
+            # Step 1: evict all entries whose TTL has already expired.
+            stale = [k for k, (exp, _) in _MARKET_DATA_CACHE.items() if exp <= now]
+            for k in stale:
+                del _MARKET_DATA_CACHE[k]
+            # Step 2: if still at cap, remove the oldest-inserted entry (FIFO).
+            while len(_MARKET_DATA_CACHE) >= _MARKET_DATA_CACHE_MAX:
+                oldest = next(iter(_MARKET_DATA_CACHE))
+                del _MARKET_DATA_CACHE[oldest]
         _MARKET_DATA_CACHE[cache_key] = (time.time() + ttl, dict(payload))
 
 
