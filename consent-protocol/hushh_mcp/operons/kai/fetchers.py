@@ -39,8 +39,18 @@ _PROVIDER_COOLDOWN_BY_STATUS: dict[int, int] = {
     429: 5 * 60,
 }
 _MARKET_DATA_CACHE: dict[str, tuple[float, Dict[str, Any]]] = {}
-_MARKET_DATA_LOCKS: dict[str, asyncio.Lock] = {}
 _MARKET_DATA_CACHE_LOCK = threading.RLock()
+
+# Maximum number of per-symbol asyncio.Lock objects kept in memory.
+# Each lock is ~300 B; 10 000 symbols * 300 B = ~3 MB worst-case.
+# Without this cap the dict grows indefinitely: locks are created for every
+# unique cache key but never removed, even after the corresponding cache entry
+# expires and is evicted from _MARKET_DATA_CACHE.
+_MARKET_DATA_LOCKS_MAX: int = max(
+    1,
+    int(os.getenv("KAI_MARKET_DATA_LOCKS_MAX", "10000") or "10000"),
+)
+_MARKET_DATA_LOCKS: dict[str, asyncio.Lock] = {}
 _MARKET_DATA_CACHE_TTL_SECONDS = max(
     60,
     int(os.getenv("KAI_MARKET_DATA_CACHE_TTL_SECONDS", "600") or "600"),
@@ -102,9 +112,31 @@ def _market_data_cache_key(symbol: str, *, finnhub_enabled: bool, pmp_enabled: b
 
 
 def _get_market_data_lock(cache_key: str) -> asyncio.Lock:
+    """Return the asyncio.Lock for *cache_key*, creating one if needed.
+
+    Eviction strategy (under _MARKET_DATA_CACHE_LOCK):
+    1. Evict locks whose cache entries have already expired - these are the
+       primary source of dead locks accumulation.
+    2. If still at capacity, evict the oldest-inserted lock (insertion-order
+       guaranteed by dict since Python 3.7). Evicting an unexpired lock means
+       two concurrent fetches for the same symbol may proceed without mutual
+       exclusion; this is safe because the fetch and cache-write are idempotent.
+
+    Max footprint: _MARKET_DATA_LOCKS_MAX * ~300 B (bounded, deterministic).
+    Previous footprint: unbounded - grew with unique symbol cardinality.
+    """
     with _MARKET_DATA_CACHE_LOCK:
         lock = _MARKET_DATA_LOCKS.get(cache_key)
         if lock is None:
+            if len(_MARKET_DATA_LOCKS) >= _MARKET_DATA_LOCKS_MAX:
+                # Step 1: remove locks for keys no longer in the cache.
+                stale = [k for k in _MARKET_DATA_LOCKS if k not in _MARKET_DATA_CACHE]
+                for k in stale:
+                    del _MARKET_DATA_LOCKS[k]
+                # Step 2: if still at capacity, drop the oldest-inserted lock.
+                while len(_MARKET_DATA_LOCKS) >= _MARKET_DATA_LOCKS_MAX:
+                    oldest = next(iter(_MARKET_DATA_LOCKS))
+                    del _MARKET_DATA_LOCKS[oldest]
             lock = asyncio.Lock()
             _MARKET_DATA_LOCKS[cache_key] = lock
         return lock
