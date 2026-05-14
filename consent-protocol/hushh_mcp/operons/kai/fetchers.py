@@ -30,7 +30,63 @@ from hushh_mcp.constants import ConsentScope
 from hushh_mcp.types import UserID
 
 logger = logging.getLogger(__name__)
-_PROVIDER_COOLDOWNS: dict[str, float] = {}
+_PROVIDER_COOLDOWNS_MAX: int = max(
+    1,
+    int(os.getenv("KAI_PROVIDER_COOLDOWNS_MAX", "1000") or "1000"),
+)
+
+
+class _ProviderCooldownStore:
+    """Thread-safe, size-bounded store for per-provider cooldown expiry times.
+
+    Keys follow the pattern ``provider:symbol`` (e.g. ``yfinance:AAPL``) or
+    ``provider:global`` for global per-provider locks.  The number of unique
+    yfinance-keyed symbols is unbounded without a cap.
+
+    Eviction strategy (triggered only when the store is full and a *new* key
+    arrives):
+    1. Remove all entries whose cooldown has already expired.
+    2. If still at capacity, evict the oldest-inserted entry (FIFO).
+    """
+
+    def __init__(self, max_entries: int = _PROVIDER_COOLDOWNS_MAX) -> None:
+        self._max = max_entries
+        self._store: dict[str, float] = {}
+        self._lock = threading.Lock()
+
+    def in_cooldown(self, key: str) -> bool:
+        now = time.time()
+        with self._lock:
+            until = self._store.get(key)
+            if until is None:
+                return False
+            if until <= now:
+                del self._store[key]
+                return False
+            return True
+
+    def set(self, key: str, until: float) -> None:
+        with self._lock:
+            if key not in self._store and len(self._store) >= self._max:
+                now = time.time()
+                stale = [k for k, exp in self._store.items() if exp <= now]
+                for k in stale:
+                    del self._store[k]
+                while len(self._store) >= self._max:
+                    oldest = next(iter(self._store))
+                    del self._store[oldest]
+            self._store[key] = until
+
+    def __len__(self) -> int:
+        with self._lock:
+            return len(self._store)
+
+    def clear(self) -> None:
+        with self._lock:
+            self._store.clear()
+
+
+_PROVIDER_COOLDOWNS = _ProviderCooldownStore()
 _PROVIDER_COOLDOWN_BY_STATUS: dict[int, int] = {
     401: 15 * 60,
     402: 15 * 60,
@@ -60,14 +116,7 @@ _YAHOO_FAST_TIMEOUT_COOLDOWN_SECONDS = max(
 
 
 def _provider_in_cooldown(key: str) -> bool:
-    now = time.time()
-    until = _PROVIDER_COOLDOWNS.get(key)
-    if until is None:
-        return False
-    if until <= now:
-        _PROVIDER_COOLDOWNS.pop(key, None)
-        return False
-    return True
+    return _PROVIDER_COOLDOWNS.in_cooldown(key)
 
 
 def _mark_provider_cooldown(key: str, status_code: int | None) -> None:
@@ -76,13 +125,13 @@ def _mark_provider_cooldown(key: str, status_code: int | None) -> None:
     duration = _PROVIDER_COOLDOWN_BY_STATUS.get(int(status_code))
     if not duration:
         return
-    _PROVIDER_COOLDOWNS[key] = time.time() + duration
+    _PROVIDER_COOLDOWNS.set(key, time.time() + duration)
 
 
 def _mark_provider_cooldown_for_duration(key: str, duration_seconds: int) -> None:
     if duration_seconds <= 0:
         return
-    _PROVIDER_COOLDOWNS[key] = time.time() + int(duration_seconds)
+    _PROVIDER_COOLDOWNS.set(key, time.time() + int(duration_seconds))
 
 
 def _provider_cooldown_key(provider_name: str, symbol: str) -> str | None:
