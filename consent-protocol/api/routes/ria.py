@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from typing import Annotated, Literal
+from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, field_validator
 
@@ -52,16 +52,6 @@ class RIAOnboardingSubmitRequest(BaseModel):
     strategy: str | None = Field(None, max_length=5000)
     disclosures_url: str | None = Field(None, max_length=2048)
     primary_firm_name: str | None = Field(None, max_length=256)
-
-    @field_validator("disclosures_url")
-    @classmethod
-    def _validate_disclosures_url_scheme(cls, v: str | None) -> str | None:
-        if v is None:
-            return v
-        if not v.startswith(("http://", "https://")):
-            raise ValueError("disclosures_url must use http or https scheme")
-        return v
-
     primary_firm_role: str | None = Field(None, max_length=128)
     force_live_verification: bool = False
     # Onboarding v2: license-first fields
