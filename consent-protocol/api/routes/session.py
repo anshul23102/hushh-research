@@ -283,6 +283,8 @@ async def lookup_user(
     required_token = str(os.getenv("HUSHH_DEVELOPER_TOKEN", "")).strip()
     if not required_token:
         raise HTTPException(status_code=503, detail="Lookup endpoint not configured")
+    # Use hmac.compare_digest to prevent timing side-channel attacks.
+    # Plain != comparison leaks information about matching prefix length.
     if not x_mcp_developer_token or not hmac.compare_digest(x_mcp_developer_token, required_token):
         raise HTTPException(status_code=403, detail="Forbidden")
 
