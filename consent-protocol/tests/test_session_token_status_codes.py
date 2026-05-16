@@ -1,11 +1,17 @@
 """
 Tests for session token endpoint status-code correctness.
 
-Closes: #406, #797 — session token endpoint returned 401 for ALL exceptions,
-including non-auth failures (DB errors, invalid scope values, etc.).
+Canonical attach point
+----------------------
+api.routes.session.issue_session_token
+  -> payload: SessionTokenRequest (userId min_length=1, max_length=128,
+     scope min_length=1, max_length=256)
+  -> FastAPI returns HTTP 422 when any bound is exceeded, before Firebase
+     verification runs
+  -> POST /api/consent/issue-token
 
-These are hermetic model-level tests (no I/O). HTTP-layer tests would require
-a running app; mark those as integration tests and skip by default.
+Closes: #406, #797 -- session token endpoint returned 401 for ALL exceptions,
+including non-auth failures (DB errors, invalid scope values, etc.).
 """
 
 import pytest
@@ -142,4 +148,58 @@ class TestStatusCodeContract:
         exc = RuntimeError("database connection lost")
         assert isinstance(exc, Exception)
         assert not isinstance(exc, ValueError)
-        # Caught by the second except-Exception block → 500 ✓
+        # Caught by the second except-Exception block -> 500
+
+
+# ===========================================================================
+# Canonical route-level caller proof
+# ===========================================================================
+
+from fastapi import FastAPI  # noqa: E402
+from fastapi.testclient import TestClient  # noqa: E402
+
+import api.routes.session as session_module  # noqa: E402
+
+
+def _session_client() -> TestClient:
+    app = FastAPI()
+    app.include_router(session_module.router)
+    return TestClient(app, raise_server_exceptions=False)
+
+
+class TestIssueSessionTokenRouteInputBounds:
+    """
+    api.routes.session.issue_session_token is the canonical owner of
+    SessionTokenRequest validation for POST /api/consent/issue-token.
+
+    Proves FastAPI returns HTTP 422 when userId or scope exceed their bounds,
+    before Firebase verification runs. The 422 fires at the framework layer
+    purely from Pydantic -- no auth token is needed to trigger it.
+    """
+
+    _URL = "/api/consent/issue-token"
+
+    def test_user_id_over_max_returns_422(self):
+        """userId > 128 chars must be rejected with 422 before any Firebase call."""
+        resp = _session_client().post(self._URL, json={"userId": "u" * 129})
+        assert resp.status_code == 422
+
+    def test_empty_user_id_returns_422(self):
+        """Empty userId must be rejected with 422 (min_length=1)."""
+        resp = _session_client().post(self._URL, json={"userId": ""})
+        assert resp.status_code == 422
+
+    def test_user_id_at_max_does_not_return_422(self):
+        """userId of exactly 128 chars must pass Pydantic and reach the handler."""
+        resp = _session_client().post(self._URL, json={"userId": "u" * 128})
+        assert resp.status_code != 422
+
+    def test_scope_over_max_returns_422(self):
+        """scope > 256 chars must be rejected with 422 before any Firebase call."""
+        resp = _session_client().post(self._URL, json={"userId": "u1", "scope": "s" * 257})
+        assert resp.status_code == 422
+
+    def test_empty_scope_returns_422(self):
+        """Empty scope must be rejected with 422 (min_length=1)."""
+        resp = _session_client().post(self._URL, json={"userId": "u1", "scope": ""})
+        assert resp.status_code == 422
