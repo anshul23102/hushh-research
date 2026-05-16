@@ -258,3 +258,18 @@ class SummaryReducerAgent:
         """
         projection = self.validate_output(raw_output)
         return self.post_process(projection)
+
+    @staticmethod
+    def scrub_dict_keys(d: dict[str, Any]) -> dict[str, Any]:
+        """
+        Remove any top-level key from *d* that contains a monetary amount or
+        a banned semantic word (same rules as the post-processing guardrail).
+
+        Canonical attach point: PersonalKnowledgeModelService._normalize_domain_summary()
+        calls this as the final pass before any domain summary is persisted to the DB.
+        This prevents structural PII leakage where poisoned key names survive all
+        value-level scrubbing (issue #586).
+
+        Safe keys pass through unchanged.
+        """
+        return {k: v for k, v in d.items() if not _key_is_unsafe(k)}

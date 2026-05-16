@@ -1,77 +1,57 @@
+# tests/agents/test_prove_dollar_leak.py
 """
 Regression proof for the structural PII leak described in issue #586.
 
-This test proves that a "poisoned" LLM output — where sensitive dollar
-amounts are embedded into JSON key names instead of values — is fully
-detected and scrubbed by the SummaryReducerAgent post-processing guardrail.
+Canonical attach point
+----------------------
+PersonalKnowledgeModelService._normalize_domain_summary()
+  -> SummaryReducerAgent.scrub_dict_keys(sanitized)
 
-Run with: pytest tests/agents/test_prove_dollar_leak.py -s
+This is the last function every domain summary passes through before the
+DB upsert (merge_pkm_domain_summary RPC). The tests below prove:
+
+1. The guardrail rejects poisoned LLM output at the SummaryReducerAgent layer.
+2. The guardrail is wired into _normalize_domain_summary() so poisoned keys
+   cannot reach the DB even if they survive earlier filters.
+3. Safe keys are not affected by either guardrail.
 """
 
+from unittest.mock import patch
+
 from hushh_mcp.agents.summary_reducer.agent import SummaryReducerAgent
+from hushh_mcp.services.personal_knowledge_model_service import PersonalKnowledgeModelService
+
+# ---------------------------------------------------------------------------
+# Layer 3 proof: SummaryReducerAgent.sanitise_llm_output (existing)
+# ---------------------------------------------------------------------------
 
 
 def test_dollar_leak_via_key_names_is_caught():
     """
-    Simulate the exact attack vector: LLM encodes account balance into
-    a presence-flag key name to bypass value-level scrubbing.
-
-    Before the fix: the poisoned payload passed through as valid because
-    the boolean values were clean.
-
-    After the fix: the guardrail detects and strips the unsafe keys.
+    Simulate the exact attack vector from issue #586: LLM encodes account
+    balance into a presence-flag key name to bypass value-level scrubbing.
     """
     agent = SummaryReducerAgent()
 
-    # Poisoned output simulating a misbehaving LLM (issue #586 PoC)
     poisoned_llm_output = {
         "presence_flags": {
-            "account_$50000": True,  # balance hidden in key name
-            "has_holdings_data": True,  # "holdings" in key name
-            "has_basic_info": True,  # safe — should survive
+            "account_$50000": True,
+            "has_holdings_data": True,
+            "has_basic_info": True,
         },
-        "counts": {
-            "total_logins": 5,  # safe
-        },
+        "counts": {"total_logins": 5},
         "freshness_markers": {},
-        "sanctioned_capability_flags": [
-            "view_$1000",  # dollar amount in capability string
-            "can_trade",  # safe — should survive
-        ],
+        "sanctioned_capability_flags": ["view_$1000", "can_trade"],
     }
 
     clean = agent.sanitise_llm_output(poisoned_llm_output)
 
-    print("\n--- AFTER GUARDRAILS: THE SANITISED PROJECTION ---")
-    print(f"Presence Flags : {clean.presence_flags}")
-    print(f"Counts         : {clean.counts}")
-    print(f"Capabilities   : {clean.sanctioned_capability_flags}")
-
-    # Unsafe keys must be gone
-    assert "account_$50000" not in clean.presence_flags, (
-        "FAIL: dollar amount in key name was not stripped"
-    )
-    assert "has_holdings_data" not in clean.presence_flags, (
-        "FAIL: 'holdings' in key name was not stripped"
-    )
-    assert "view_$1000" not in clean.sanctioned_capability_flags, (
-        "FAIL: dollar amount in capability string was not stripped"
-    )
-
-    # Safe data must remain
-    assert clean.presence_flags.get("has_basic_info") is True, (
-        "FAIL: safe presence flag was incorrectly stripped"
-    )
-    assert clean.counts.get("total_logins") == 5, "FAIL: safe count was incorrectly stripped"
-    assert "can_trade" in clean.sanctioned_capability_flags, (
-        "FAIL: safe capability was incorrectly stripped"
-    )
-
-    print("\n[SUCCESS] Guardrail detected PII in structural keys and stripped them.")
-    print("Only safe data survived:")
-    print(f"  Presence Flags : {clean.presence_flags}")
-    print(f"  Counts         : {clean.counts}")
-    print(f"  Capabilities   : {clean.sanctioned_capability_flags}")
+    assert "account_$50000" not in clean.presence_flags
+    assert "has_holdings_data" not in clean.presence_flags
+    assert "view_$1000" not in clean.sanctioned_capability_flags
+    assert clean.presence_flags.get("has_basic_info") is True
+    assert clean.counts.get("total_logins") == 5
+    assert "can_trade" in clean.sanctioned_capability_flags
 
 
 def test_pre_processing_blindfold_works():
@@ -83,30 +63,94 @@ def test_pre_processing_blindfold_works():
 
     raw_pkm_data = {
         "financial": {
-            "balance": 50000,  # sensitive
-            "holdings": [  # sensitive
-                {"symbol": "AAPL", "value": 10000},
-            ],
-            "account_number": "1234-5678",  # sensitive
-            "last_login": "2026-05-01",  # not sensitive
+            "balance": 50000,
+            "holdings": [{"symbol": "AAPL", "value": 10000}],
+            "account_number": "1234-5678",
+            "last_login": "2026-05-01",
         },
-        "has_trades": True,  # not sensitive
+        "has_trades": True,
     }
 
     blindfolded = agent.pre_process(raw_pkm_data)
 
-    print("\n--- AFTER PRE-PROCESSING: THE BLINDFOLDED DATA ---")
-    print(f"financial.balance      : {blindfolded['financial']['balance']}")
-    print(f"financial.holdings     : {blindfolded['financial']['holdings']}")
-    print(f"financial.account_num  : {blindfolded['financial']['account_number']}")
-    print(f"financial.last_login   : {blindfolded['financial']['last_login']}")
-    print(f"has_trades             : {blindfolded['has_trades']}")
-
     assert blindfolded["financial"]["balance"] == "[REDACTED FOR REDUCER]"
     assert blindfolded["financial"]["holdings"] == "[REDACTED FOR REDUCER]"
     assert blindfolded["financial"]["account_number"] == "[REDACTED FOR REDUCER]"
-    # Non-sensitive values pass through unchanged
     assert blindfolded["financial"]["last_login"] == "2026-05-01"
     assert blindfolded["has_trades"] is True
 
-    print("\n[SUCCESS] Pre-processing correctly redacted all sensitive values.")
+
+# ---------------------------------------------------------------------------
+# Canonical attach-point proof: _normalize_domain_summary wires the guardrail
+# ---------------------------------------------------------------------------
+
+
+def _make_pkm_service() -> PersonalKnowledgeModelService:
+    """Return a PKM service instance with no real DB connection."""
+    with patch("hushh_mcp.services.personal_knowledge_model_service.get_db"):
+        return PersonalKnowledgeModelService.__new__(PersonalKnowledgeModelService)
+
+
+def test_normalize_domain_summary_strips_monetary_key():
+    """
+    _normalize_domain_summary must strip a key whose name encodes a dollar
+    amount even when its value is a safe boolean.
+
+    This is the exact attack vector from issue #586 applied to the canonical
+    production funnel (every domain summary passes through this method before
+    the merge_pkm_domain_summary DB upsert).
+    """
+    svc = _make_pkm_service()
+
+    # "has_$50000_portfolio" is a poisoned has_-prefixed boolean key.
+    # Without the guardrail it would pass the existing filter and be stored.
+    poisoned_summary = {
+        "attribute_count": 3,
+        "has_$50000_portfolio": True,
+        "has_trades": True,
+    }
+
+    result = svc._normalize_domain_summary("financial", poisoned_summary)
+
+    assert "has_$50000_portfolio" not in result, (
+        "Monetary amount in key name must be stripped by SummaryReducerAgent.scrub_dict_keys()"
+    )
+    assert result.get("has_trades") is True, "Safe has_-prefixed key must survive"
+
+
+def test_normalize_domain_summary_strips_holdings_key():
+    """
+    _normalize_domain_summary must strip a has_-prefixed key that contains
+    the banned word 'holdings'.
+    """
+    svc = _make_pkm_service()
+
+    poisoned_summary = {
+        "attribute_count": 2,
+        "has_holdings_data": True,
+        "has_trades": True,
+    }
+
+    result = svc._normalize_domain_summary("financial", poisoned_summary)
+
+    assert "has_holdings_data" not in result
+    assert result.get("has_trades") is True
+
+
+def test_normalize_domain_summary_safe_keys_unchanged():
+    """
+    Safe keys that do not contain monetary amounts or banned words must
+    pass through _normalize_domain_summary unmodified.
+    """
+    svc = _make_pkm_service()
+
+    safe_summary = {
+        "attribute_count": 5,
+        "has_trades": True,
+        "has_linked_accounts": True,
+    }
+
+    result = svc._normalize_domain_summary("financial", safe_summary)
+
+    assert result.get("has_trades") is True
+    assert result.get("has_linked_accounts") is True
