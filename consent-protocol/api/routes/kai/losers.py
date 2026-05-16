@@ -84,7 +84,6 @@ class AnalyzeLosersRequest(BaseModel):
         default_factory=list,
         max_length=500,
         description="Optional full holdings snapshot for Optimize Portfolio.",
-        max_length=1000,
     )
     force_optimize: bool = Field(
         False,
