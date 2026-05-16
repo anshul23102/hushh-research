@@ -1,25 +1,35 @@
 # tests/test_kai_routes_info_disclosure.py
 """
-Regression tests for CWE-209 information disclosure in
-api/routes/kai/analyze.py and api/routes/kai/chat.py.
+Trust-boundary proof for CWE-209 fixes in api.routes.kai.analyze and
+api.routes.kai.chat.
+
+Canonical attach points
+-----------------------
+api.routes.kai.analyze.analyze_ticker          (POST /analyze)
+  -> KaiOrchestrator.analyze(...)
+  -> raises HTTPException(400, "Invalid analysis request.") on ValueError
+  -> raises HTTPException(500, "Analysis is temporarily unavailable.") on Exception
+
+api.routes.kai.chat.analyze_portfolio_loser    (POST /chat/analyze-loser)
+  -> get_kai_chat_service().analyze_portfolio_loser(...)
+  -> raises HTTPException(500, "Analysis is temporarily unavailable.") on Exception
 
 Before the fix:
-- ValueError from analysis logic: detail=str(e)  (400)
-- Unexpected Exception: detail=f"Analysis failed: {str(e)}"  (500)
+- analyze.py line 129: detail=str(e) on ValueError (400) -- exposes input details
+- analyze.py line 143: detail=f"Analysis failed: {str(e)}" on Exception (500)
+- chat.py line 381:    detail=f"Analysis failed: {str(e)}" on Exception (500)
 
-Both leaked internal state (DB connection strings, stack info, etc.)
-to HTTP callers.
+Any of these paths could expose DB connection strings, internal hostnames,
+or business logic details to HTTP callers.
 
-After the fix: all failure paths return a static generic message.
-
-All tests are hermetic: no network, no DB, no Firebase.
+Tests prove that the canonical caller (the route handler) suppresses the
+exception string at the point where the HTTP response is constructed.
 """
 
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -31,6 +41,7 @@ _POISON = "postgresql://admin:hunter2@db.internal:5432/hushh"  # noqa: S105
 
 _KAI_ORCHESTRATOR = "hushh_mcp.agents.kai.orchestrator.KaiOrchestrator"
 _KAI_CHAT_SERVICE = "api.routes.kai.chat.get_kai_chat_service"
+
 
 # ---------------------------------------------------------------------------
 # App fixtures
@@ -45,100 +56,93 @@ def _vault_owner_override():
     }
 
 
-def _analyze_app() -> tuple[FastAPI, TestClient]:
+def _analyze_client() -> TestClient:
     app = FastAPI()
     app.include_router(analyze_module.router)
     app.dependency_overrides[require_vault_owner_token] = _vault_owner_override
-    return app, TestClient(app, raise_server_exceptions=False)
+    return TestClient(app, raise_server_exceptions=False)
 
 
-def _chat_app() -> tuple[FastAPI, TestClient]:
+def _chat_client() -> TestClient:
     app = FastAPI()
     app.include_router(chat_module.router)
     app.dependency_overrides[require_vault_owner_token] = _vault_owner_override
-    return app, TestClient(app, raise_server_exceptions=False)
+    return TestClient(app, raise_server_exceptions=False)
 
 
 # ---------------------------------------------------------------------------
-# kai/analyze.py - info disclosure tests
+# Canonical attach-point proof:
+# api.routes.kai.analyze.analyze_ticker (POST /analyze)
 # ---------------------------------------------------------------------------
 
 
-class TestAnalyzeInfoDisclosure:
-    @pytest.fixture(autouse=True)
-    def _setup(self):
-        _, self.c = _analyze_app()
+class TestAnalyzeTickerInfoDisclosure:
+    """
+    api.routes.kai.analyze.analyze_ticker is the canonical owner of the
+    400/500 error responses for the /analyze endpoint.
 
-    def _analyze_request(self):
-        return {
-            "user_id": "user_test",
-            "ticker": "AAPL",
-        }
+    Proves that ValueError and RuntimeError from the orchestrator are
+    suppressed at the route level and do not reach the HTTP response body.
+    """
 
     def test_value_error_returns_generic_400(self):
         """ValueError from orchestrator must not expose the exception message."""
         mock_orch = MagicMock()
-        mock_orch.analyze = AsyncMock(
-            side_effect=ValueError(f"internal validation: {_POISON}")
-        )
+        mock_orch.analyze = AsyncMock(side_effect=ValueError(f"internal validation: {_POISON}"))
 
         with patch(_KAI_ORCHESTRATOR, return_value=mock_orch):
-            resp = self.c.post(
+            resp = _analyze_client().post(
                 "/analyze",
-                json=self._analyze_request(),
+                json={"user_id": "user_test", "ticker": "AAPL"},
                 headers={"Authorization": "Bearer fake-vault-token"},
             )
 
         assert resp.status_code == 400
-        body = resp.text
-        assert _POISON not in body, "Credentials must not appear in HTTP response"
-        assert "internal validation" not in body
+        assert _POISON not in resp.text, "Credentials must not appear in HTTP response"
+        assert "internal validation" not in resp.text
         assert resp.json()["detail"] == "Invalid analysis request."
 
-    def test_unexpected_exception_returns_generic_500(self):
+    def test_runtime_error_returns_generic_500(self):
         """RuntimeError must not expose internals in the 500 response."""
         mock_orch = MagicMock()
-        mock_orch.analyze = AsyncMock(
-            side_effect=RuntimeError(f"connection refused: {_POISON}")
-        )
+        mock_orch.analyze = AsyncMock(side_effect=RuntimeError(f"connection refused: {_POISON}"))
 
         with patch(_KAI_ORCHESTRATOR, return_value=mock_orch):
-            resp = self.c.post(
+            resp = _analyze_client().post(
                 "/analyze",
-                json=self._analyze_request(),
+                json={"user_id": "user_test", "ticker": "AAPL"},
                 headers={"Authorization": "Bearer fake-vault-token"},
             )
 
         assert resp.status_code == 500
-        body = resp.text
-        assert _POISON not in body
-        assert "connection refused" not in body
+        assert _POISON not in resp.text
+        assert "connection refused" not in resp.text
         assert resp.json()["detail"] == "Analysis is temporarily unavailable."
 
-    def test_value_error_generic_message_exact(self):
-        """Exact expected detail text for 400."""
+    def test_value_error_detail_exact(self):
+        """400 detail must match the exact static string."""
         mock_orch = MagicMock()
         mock_orch.analyze = AsyncMock(side_effect=ValueError("bad input"))
 
         with patch(_KAI_ORCHESTRATOR, return_value=mock_orch):
-            resp = self.c.post(
+            resp = _analyze_client().post(
                 "/analyze",
-                json=self._analyze_request(),
+                json={"user_id": "user_test", "ticker": "AAPL"},
                 headers={"Authorization": "Bearer fake-vault-token"},
             )
 
         assert resp.status_code == 400
         assert resp.json()["detail"] == "Invalid analysis request."
 
-    def test_runtime_error_generic_message_exact(self):
-        """Exact expected detail text for 500."""
+    def test_runtime_error_detail_exact(self):
+        """500 detail must match the exact static string."""
         mock_orch = MagicMock()
         mock_orch.analyze = AsyncMock(side_effect=RuntimeError("boom"))
 
         with patch(_KAI_ORCHESTRATOR, return_value=mock_orch):
-            resp = self.c.post(
+            resp = _analyze_client().post(
                 "/analyze",
-                json=self._analyze_request(),
+                json={"user_id": "user_test", "ticker": "AAPL"},
                 headers={"Authorization": "Bearer fake-vault-token"},
             )
 
@@ -147,22 +151,21 @@ class TestAnalyzeInfoDisclosure:
 
 
 # ---------------------------------------------------------------------------
-# kai/chat.py - analyze-loser endpoint info disclosure
+# Canonical attach-point proof:
+# api.routes.kai.chat.analyze_portfolio_loser (POST /chat/analyze-loser)
 # ---------------------------------------------------------------------------
 
 
-class TestChatAnalyzeLoserInfoDisclosure:
-    @pytest.fixture(autouse=True)
-    def _setup(self):
-        _, self.c = _chat_app()
+class TestAnalyzePortfolioLoserInfoDisclosure:
+    """
+    api.routes.kai.chat.analyze_portfolio_loser is the canonical owner of
+    the 500 error response for the /chat/analyze-loser endpoint.
 
-    def _loser_request(self):
-        return {
-            "user_id": "user_test",
-            "symbol": "AAPL",
-        }
+    Proves that RuntimeError from the chat service is suppressed at the
+    route level and does not reach the HTTP response body.
+    """
 
-    def test_analyze_loser_exception_returns_generic_500(self):
+    def test_exception_returns_generic_500(self):
         """Exception inside analyze_portfolio_loser must not leak the error string."""
         service_mock = MagicMock()
         service_mock.analyze_portfolio_loser = AsyncMock(
@@ -170,27 +173,26 @@ class TestChatAnalyzeLoserInfoDisclosure:
         )
 
         with patch(_KAI_CHAT_SERVICE, return_value=service_mock):
-            resp = self.c.post(
+            resp = _chat_client().post(
                 "/chat/analyze-loser",
-                json=self._loser_request(),
+                json={"user_id": "user_test", "symbol": "AAPL"},
                 headers={"Authorization": "Bearer fake-vault-token"},
             )
 
         assert resp.status_code == 500
-        body = resp.text
-        assert _POISON not in body, "Credentials must not appear in HTTP response"
-        assert "db error" not in body
+        assert _POISON not in resp.text, "Credentials must not appear in HTTP response"
+        assert "db error" not in resp.text
         assert resp.json()["detail"] == "Analysis is temporarily unavailable."
 
-    def test_analyze_loser_generic_message_exact(self):
-        """Exact expected detail text for 500."""
+    def test_exception_detail_exact(self):
+        """500 detail must match the exact static string."""
         service_mock = MagicMock()
         service_mock.analyze_portfolio_loser = AsyncMock(side_effect=RuntimeError("boom"))
 
         with patch(_KAI_CHAT_SERVICE, return_value=service_mock):
-            resp = self.c.post(
+            resp = _chat_client().post(
                 "/chat/analyze-loser",
-                json=self._loser_request(),
+                json={"user_id": "user_test", "symbol": "AAPL"},
                 headers={"Authorization": "Bearer fake-vault-token"},
             )
 
