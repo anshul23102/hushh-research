@@ -1,14 +1,31 @@
 # tests/test_consent_timeout_enforcement.py
 """
-Regression tests for the poll_timeout_at enforcement gap in
-ConsentDBService.get_pending_by_request_id().
+Canonical attach-point proof for the poll_timeout_at enforcement gap.
+
+Canonical attach point
+----------------------
+hushh_mcp.services.consent_db.ConsentDBService.get_pending_by_request_id
+  -> self._effective_pending_timeout_at(row)
+  -> returns None when poll_timeout_at has elapsed
 
 Before the fix, get_pending_requests() filtered out timed-out rows via
-poll_timeout_at but get_pending_by_request_id() did NOT.  This meant a
-direct lookup by request_id could surface an expired consent request,
-allowing the approve endpoint to issue a token for it.
+poll_timeout_at (lines 442-443) but get_pending_by_request_id() had no
+equivalent check.  A direct lookup by request_id could surface an expired
+consent request, allowing the /consent/approve endpoint to issue a token
+after the polling window had closed.
 
-All tests are hermetic: no network, no Supabase, no Firebase.
+The fix adds the same poll_timeout_at gate to get_pending_by_request_id():
+when the timeout has elapsed, return None so callers see the request as
+absent.  expires_at continues to serve as the fallback via the existing
+_effective_pending_timeout_at() helper.
+
+Tests prove:
+1. Reachability: timed-out rows returned by Supabase are suppressed before
+   they reach any caller.
+2. Non-regression: live requests (future timeout or no timeout field) are
+   still returned.
+3. Consistency: get_pending_requests and get_pending_by_request_id agree
+   on what counts as "still pending".
 """
 
 from __future__ import annotations
@@ -22,22 +39,21 @@ import pytest
 from hushh_mcp.services.consent_db import ConsentDBService
 
 # ---------------------------------------------------------------------------
-# Helpers
+# Fixtures
 # ---------------------------------------------------------------------------
 
 _NOW_MS = int(time.time() * 1000)
 _UID = "user_test_123"
 _REQ_ID = "req_abc456"
 
-# A minimal valid external audit row
 _BASE_ROW: Dict[str, Any] = {
     "user_id": _UID,
     "request_id": _REQ_ID,
     "action": "REQUESTED",
     "scope": "attr.financial.*",
-    "agent_id": "developer:test_app",  # external agent -> passes _is_external_audit_row
+    "agent_id": "developer:test_app",
     "issued_at": _NOW_MS - 60_000,
-    "expires_at": _NOW_MS + 3_600_000,  # 1 hour ahead
+    "expires_at": _NOW_MS + 3_600_000,
     "poll_timeout_at": None,
     "metadata": None,
     "scope_description": "Financial data",
@@ -49,14 +65,15 @@ def _row(**overrides: Any) -> Dict[str, Any]:
 
 
 def _supabase_returning(rows: list[Dict[str, Any]]) -> MagicMock:
-    """Return a fake Supabase client whose .execute() yields the given rows."""
+    """Fake Supabase client whose .execute() yields the given rows."""
     execute_result = MagicMock()
     execute_result.data = rows
     chain = MagicMock()
     chain.execute.return_value = execute_result
-    # .table().select().eq().eq().order().limit() all return the chain
     supabase = MagicMock()
-    supabase.table.return_value.select.return_value.eq.return_value.eq.return_value.order.return_value.limit.return_value = chain  # noqa: E501
+    supabase.table.return_value.select.return_value.eq.return_value.eq.return_value.order.return_value.limit.return_value = (  # noqa: E501
+        chain
+    )
     return supabase
 
 
@@ -67,17 +84,47 @@ def _service(supabase: MagicMock) -> ConsentDBService:
 
 
 # ---------------------------------------------------------------------------
-# Tests
+# Canonical attach-point proof:
+# ConsentDBService.get_pending_by_request_id -- timeout gate enforcement
 # ---------------------------------------------------------------------------
 
 
-class TestGetPendingByRequestIdTimeoutEnforcement:
-    """get_pending_by_request_id must return None for timed-out requests."""
+class TestConsentDBServiceGetPendingByRequestIdTimeoutGate:
+    """
+    ConsentDBService.get_pending_by_request_id is the canonical attach point.
+
+    Proves that the poll_timeout_at gate is enforced at the single-lookup
+    path so that timed-out requests cannot reach the /consent/approve caller.
+    """
 
     @pytest.mark.asyncio
-    async def test_no_timeout_field_returns_request(self):
-        """When poll_timeout_at is absent the request is still live."""
-        row = _row(poll_timeout_at=None, expires_at=_NOW_MS + 3_600_000)
+    async def test_elapsed_poll_timeout_at_returns_none(self):
+        """
+        A row whose poll_timeout_at is in the past must be suppressed.
+
+        This is the exact attack vector from the gap: without the guard,
+        a direct lookup returns the row and the approve endpoint issues a
+        token after the polling window has closed.
+        """
+        row = _row(poll_timeout_at=_NOW_MS - 1)  # 1 ms in the past
+        svc = _service(_supabase_returning([row]))
+        with patch.object(svc, "list_internal_request_events", new=AsyncMock(return_value=[])):
+            result = await svc.get_pending_by_request_id(_UID, _REQ_ID)
+        assert result is None, "Timed-out request must not be returned to callers"
+
+    @pytest.mark.asyncio
+    async def test_far_past_timeout_returns_none(self):
+        """Requests that expired long ago are also suppressed."""
+        row = _row(poll_timeout_at=_NOW_MS - 3_600_000)
+        svc = _service(_supabase_returning([row]))
+        with patch.object(svc, "list_internal_request_events", new=AsyncMock(return_value=[])):
+            result = await svc.get_pending_by_request_id(_UID, _REQ_ID)
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_future_timeout_returns_request(self):
+        """A live request (poll_timeout_at in the future) is still returned."""
+        row = _row(poll_timeout_at=_NOW_MS + 60_000)
         svc = _service(_supabase_returning([row]))
         with patch.object(svc, "list_internal_request_events", new=AsyncMock(return_value=[])):
             result = await svc.get_pending_by_request_id(_UID, _REQ_ID)
@@ -85,31 +132,25 @@ class TestGetPendingByRequestIdTimeoutEnforcement:
         assert result["request_id"] == _REQ_ID
 
     @pytest.mark.asyncio
-    async def test_future_timeout_returns_request(self):
-        """A request whose poll_timeout_at is in the future is still pending."""
-        row = _row(poll_timeout_at=_NOW_MS + 60_000)
+    async def test_no_timeout_field_returns_request(self):
+        """When poll_timeout_at is absent, the request is treated as live."""
+        row = _row(poll_timeout_at=None, expires_at=_NOW_MS + 3_600_000)
         svc = _service(_supabase_returning([row]))
         with patch.object(svc, "list_internal_request_events", new=AsyncMock(return_value=[])):
             result = await svc.get_pending_by_request_id(_UID, _REQ_ID)
         assert result is not None
 
     @pytest.mark.asyncio
-    async def test_elapsed_poll_timeout_at_returns_none(self):
-        """A request whose poll_timeout_at has already passed must return None."""
-        row = _row(poll_timeout_at=_NOW_MS - 1)  # 1 ms in the past
+    async def test_expires_at_fallback_suppresses_expired_request(self):
+        """
+        When poll_timeout_at is absent, _effective_pending_timeout_at() falls
+        back to expires_at.  An expired request must still be suppressed.
+        """
+        row = _row(poll_timeout_at=None, expires_at=_NOW_MS - 1)
         svc = _service(_supabase_returning([row]))
         with patch.object(svc, "list_internal_request_events", new=AsyncMock(return_value=[])):
             result = await svc.get_pending_by_request_id(_UID, _REQ_ID)
-        assert result is None, "Timed-out request must not be returned"
-
-    @pytest.mark.asyncio
-    async def test_far_past_timeout_returns_none(self):
-        """Requests expired long ago must also be suppressed."""
-        row = _row(poll_timeout_at=_NOW_MS - 3_600_000)  # 1 hour ago
-        svc = _service(_supabase_returning([row]))
-        with patch.object(svc, "list_internal_request_events", new=AsyncMock(return_value=[])):
-            result = await svc.get_pending_by_request_id(_UID, _REQ_ID)
-        assert result is None
+        assert result is None, "Expired request via expires_at fallback must not be returned"
 
     @pytest.mark.asyncio
     async def test_resolved_action_returns_none(self):
@@ -121,44 +162,39 @@ class TestGetPendingByRequestIdTimeoutEnforcement:
 
     @pytest.mark.asyncio
     async def test_empty_db_result_returns_none(self):
-        """No matching row means no pending request."""
+        """No matching row in DB means no pending request."""
         svc = _service(_supabase_returning([]))
         result = await svc.get_pending_by_request_id(_UID, _REQ_ID)
         assert result is None
 
     @pytest.mark.asyncio
-    async def test_expires_at_used_as_fallback_timeout(self):
-        """When poll_timeout_at is absent, expires_at serves as the fallback gate."""
-        # expires_at in the past with no poll_timeout_at -> treat as timed out
-        row = _row(poll_timeout_at=None, expires_at=_NOW_MS - 1)
-        svc = _service(_supabase_returning([row]))
-        with patch.object(svc, "list_internal_request_events", new=AsyncMock(return_value=[])):
-            result = await svc.get_pending_by_request_id(_UID, _REQ_ID)
-        assert result is None, "Expired request (via expires_at fallback) must not be returned"
-
-    @pytest.mark.asyncio
     async def test_consistency_with_get_pending_requests(self):
         """
         get_pending_requests and get_pending_by_request_id must agree:
-        a timed-out row must be absent from both.
+        a timed-out row must be absent from both paths.
+
+        Before the fix, get_pending_requests suppressed the row but
+        get_pending_by_request_id returned it, allowing the approve endpoint
+        to bypass the timeout gate via the single-lookup path.
         """
         timed_out_row = _row(poll_timeout_at=_NOW_MS - 500)
 
+        # Single-lookup path
         svc_single = _service(_supabase_returning([timed_out_row]))
         with patch.object(
             svc_single, "list_internal_request_events", new=AsyncMock(return_value=[])
         ):
             single_result = await svc_single.get_pending_by_request_id(_UID, _REQ_ID)
 
-        # For get_pending_requests the Supabase mock must match its query chain
+        # List path -- mock matches get_pending_requests' query chain
         list_execute = MagicMock()
         list_execute.data = [timed_out_row]
         list_supabase = MagicMock()
-        list_supabase.table.return_value.select.return_value.eq.return_value.order.return_value.execute.return_value = list_execute  # noqa: E501
+        list_supabase.table.return_value.select.return_value.eq.return_value.order.return_value.execute.return_value = (  # noqa: E501
+            list_execute
+        )
         svc_list = _service(list_supabase)
-        with patch.object(
-            svc_list, "list_internal_request_events", new=AsyncMock(return_value=[])
-        ):
+        with patch.object(svc_list, "list_internal_request_events", new=AsyncMock(return_value=[])):
             list_result = await svc_list.get_pending_requests(_UID)
 
         assert single_result is None, "get_pending_by_request_id must filter timed-out row"
