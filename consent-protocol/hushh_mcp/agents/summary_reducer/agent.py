@@ -34,6 +34,12 @@ Defense-in-depth architecture (three layers)
    It inspects every key inside the four allowed output classes and deletes
    any key that matches a monetary-amount pattern or a banned semantic word.
    This catches hallucinations where the LLM encodes PII into key names.
+
+   Two key-safety functions serve different callers:
+   - _key_is_unsafe(): broad rules for LLM output (all banned substrings).
+   - _service_key_is_unsafe(): narrow rules for service summaries (currency
+     patterns + has_-prefix banned substrings only).  Legitimate aggregate
+     metrics such as holdings_count are preserved at the service layer.
 """
 
 from __future__ import annotations
@@ -167,16 +173,44 @@ def _pre_process_data(data: Any, depth: int = 0) -> Any:  # noqa: ANN401
 
 def _key_is_unsafe(key: str) -> bool:
     """
-    Return True if *key* contains a leaked monetary amount or a banned term.
+    Return True if *key* leaks a monetary amount or encodes a banned semantic
+    term — used on raw LLM output (SummaryProjection fields) where the model
+    may hallucinate financial values directly into key names (issue #586).
 
     Checks:
-    1. Currency/numeric pattern (catches "$50000", "100_dollars", "1000usd")
-    2. Banned semantic substrings (catches "holdings_data", "balance_check")
+    1. Currency/numeric pattern in any key (catches "$50000", "100_dollars").
+    2. Any banned semantic substring in the key name.
+       LLM-generated keys like "holdings_count", "balance_updated_at" are
+       structurally unsafe because the LLM chose those names to smuggle PII.
     """
     key_lower = key.lower()
     if _CURRENCY_IN_KEY_PATTERN.search(key_lower):
         return True
     if any(banned in key_lower for banned in _BANNED_KEY_SUBSTRINGS):
+        return True
+    return False
+
+
+def _service_key_is_unsafe(key: str) -> bool:
+    """
+    Narrower variant used only by scrub_dict_keys() on service-layer summaries.
+
+    Service summaries contain legitimate aggregate metrics such as
+    ``holdings_count`` and ``balance_count`` that must reach the DB.
+    Only two classes of keys are rejected here:
+
+    1. Currency/numeric patterns (e.g. "has_$50000_portfolio").
+    2. ``has_``-prefixed keys that contain a banned semantic substring.
+       These are the exact attack vector from issue #586: a poisoned boolean
+       flag that encodes a raw financial value in its key name.
+
+    Plain aggregate keys (e.g. "holdings_count") are NOT rejected here
+    because they carry no raw values and are required by downstream consumers.
+    """
+    key_lower = key.lower()
+    if _CURRENCY_IN_KEY_PATTERN.search(key_lower):
+        return True
+    if key_lower.startswith("has_") and any(banned in key_lower for banned in _BANNED_KEY_SUBSTRINGS):
         return True
     return False
 
@@ -262,14 +296,17 @@ class SummaryReducerAgent:
     @staticmethod
     def scrub_dict_keys(d: dict[str, Any]) -> dict[str, Any]:
         """
-        Remove any top-level key from *d* that contains a monetary amount or
-        a banned semantic word (same rules as the post-processing guardrail).
+        Remove any top-level key from *d* that carries a monetary amount or is
+        a poisoned ``has_``-prefixed flag (service-layer rules, issue #586).
+
+        Uses ``_service_key_is_unsafe`` which is intentionally narrower than the
+        LLM-output guardrail: legitimate aggregate metrics such as
+        ``holdings_count`` and ``balance_count`` are preserved because they carry
+        no raw values and are required by downstream consumers.
 
         Canonical attach point: PersonalKnowledgeModelService._normalize_domain_summary()
         calls this as the final pass before any domain summary is persisted to the DB.
-        This prevents structural PII leakage where poisoned key names survive all
-        value-level scrubbing (issue #586).
 
         Safe keys pass through unchanged.
         """
-        return {k: v for k, v in d.items() if not _key_is_unsafe(k)}
+        return {k: v for k, v in d.items() if not _service_key_is_unsafe(k)}
