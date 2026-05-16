@@ -1,6 +1,22 @@
 """
 Tests for input bounds on voice and support request models.
 
+Canonical attach points
+-----------------------
+api.routes.kai.voice.kai_voice_plan
+  -> payload: VoicePlanRequest (user_id max_length=128, transcript max_length=32000,
+     memory_short list max_length=100)
+  -> FastAPI returns HTTP 422 when any bound is exceeded
+
+api.routes.kai.voice.kai_voice_capability
+  -> payload: VoiceCapabilityRequest (user_id max_length=128)
+  -> FastAPI returns HTTP 422 when any bound is exceeded
+
+api.routes.kai.support.send_support_message
+  -> payload: SupportMessageRequest (user_id max_length=128, subject max_length=140,
+     message max_length=8000)
+  -> FastAPI returns HTTP 422 when any bound is exceeded
+
 Covers:
 - VoicePlanRequest: user_id, transcript, turn_id, transcript_final,
   memory_short, memory_retrieved
@@ -267,3 +283,161 @@ class TestSupportMessageRequest:
     def test_message_too_long_raises(self):
         with pytest.raises(ValidationError):
             SupportMessageRequest(**self._valid(message="m" * 8001))
+
+
+# ===========================================================================
+# Canonical route-level caller proof
+# ===========================================================================
+
+from fastapi import FastAPI  # noqa: E402
+from fastapi.testclient import TestClient  # noqa: E402
+
+import api.routes.kai.support as support_module  # noqa: E402
+import api.routes.kai.voice as voice_module  # noqa: E402
+from api.middleware import require_firebase_auth, require_vault_owner_token  # noqa: E402
+
+
+def _vault_owner_stub() -> dict:
+    return {"user_id": "test-uid", "token": "fake-token", "scope": "vault.owner"}  # noqa: S105
+
+
+def _firebase_stub() -> str:
+    return "test-uid"
+
+
+def _voice_client() -> TestClient:
+    app = FastAPI()
+    app.include_router(voice_module.router)
+    app.dependency_overrides[require_vault_owner_token] = _vault_owner_stub
+    return TestClient(app, raise_server_exceptions=False)
+
+
+def _support_client() -> TestClient:
+    app = FastAPI()
+    app.include_router(support_module.router)
+    app.dependency_overrides[require_firebase_auth] = _firebase_stub
+    return TestClient(app, raise_server_exceptions=False)
+
+
+# ---------------------------------------------------------------------------
+# Canonical attach point: api.routes.kai.voice.kai_voice_plan
+# POST /voice/plan  ->  VoicePlanRequest
+# ---------------------------------------------------------------------------
+
+
+class TestKaiVoicePlanRouteInputBounds:
+    """
+    api.routes.kai.voice.kai_voice_plan is the canonical owner of
+    VoicePlanRequest validation for POST /voice/plan.
+
+    Proves FastAPI returns HTTP 422 when user_id, transcript, or
+    memory_short exceed their bounds, before any LLM pipeline runs.
+    """
+
+    _URL = "/voice/plan"
+
+    def _valid_body(self, **overrides) -> dict:
+        base = {
+            "user_id": "test-uid",
+            "transcript": "Buy Apple",
+        }
+        return {**base, **overrides}
+
+    def test_valid_body_passes_validation(self):
+        """A valid body must not be rejected by Pydantic validation."""
+        resp = _voice_client().post(self._URL, json=self._valid_body())
+        assert resp.status_code != 422
+
+    def test_user_id_over_max_returns_422(self):
+        """user_id > 128 chars must be rejected with 422."""
+        resp = _voice_client().post(self._URL, json=self._valid_body(user_id="u" * 129))
+        assert resp.status_code == 422
+
+    def test_transcript_over_max_returns_422(self):
+        """transcript > 32000 chars must be rejected with 422."""
+        resp = _voice_client().post(self._URL, json=self._valid_body(transcript="t" * 32_001))
+        assert resp.status_code == 422
+
+    def test_memory_short_over_max_returns_422(self):
+        """memory_short list > 100 items must be rejected with 422."""
+        resp = _voice_client().post(self._URL, json=self._valid_body(memory_short=[{}] * 101))
+        assert resp.status_code == 422
+
+
+# ---------------------------------------------------------------------------
+# Canonical attach point: api.routes.kai.voice.kai_voice_capability
+# POST /voice/capability  ->  VoiceCapabilityRequest
+# ---------------------------------------------------------------------------
+
+
+class TestKaiVoiceCapabilityRouteInputBounds:
+    """
+    api.routes.kai.voice.kai_voice_capability is the canonical owner of
+    VoiceCapabilityRequest validation for POST /voice/capability.
+
+    Proves FastAPI returns HTTP 422 when user_id exceeds max_length=128.
+    """
+
+    _URL = "/voice/capability"
+
+    def test_valid_user_id_passes_validation(self):
+        """A valid user_id must not be rejected by Pydantic validation."""
+        resp = _voice_client().post(self._URL, json={"user_id": "test-uid"})
+        assert resp.status_code != 422
+
+    def test_user_id_over_max_returns_422(self):
+        """user_id > 128 chars must be rejected with 422."""
+        resp = _voice_client().post(self._URL, json={"user_id": "u" * 129})
+        assert resp.status_code == 422
+
+    def test_empty_user_id_returns_422(self):
+        """Empty user_id must be rejected with 422."""
+        resp = _voice_client().post(self._URL, json={"user_id": ""})
+        assert resp.status_code == 422
+
+
+# ---------------------------------------------------------------------------
+# Canonical attach point: api.routes.kai.support.send_support_message
+# POST /support/message  ->  SupportMessageRequest
+# ---------------------------------------------------------------------------
+
+
+class TestSendSupportMessageRouteInputBounds:
+    """
+    api.routes.kai.support.send_support_message is the canonical owner of
+    SupportMessageRequest validation for POST /support/message.
+
+    Proves FastAPI returns HTTP 422 when user_id, subject, or message
+    exceed their bounds, before any downstream handling.
+    """
+
+    _URL = "/support/message"
+
+    def _valid_body(self, **overrides) -> dict:
+        base = {
+            "user_id": "test-uid",
+            "kind": "support_request",
+            "subject": "App crashes",
+            "message": "Crash on login.",
+        }
+        return {**base, **overrides}
+
+    def test_valid_body_passes_validation(self):
+        """A valid body must not be rejected by Pydantic validation."""
+        resp = _support_client().post(self._URL, json=self._valid_body())
+        assert resp.status_code != 422
+
+    def test_user_id_over_max_returns_422(self):
+        """user_id > 128 chars must be rejected with 422."""
+        resp = _support_client().post(self._URL, json=self._valid_body(user_id="u" * 129))
+        assert resp.status_code == 422
+
+    def test_subject_over_max_returns_422(self):
+        """subject > 140 chars must be rejected with 422."""
+        resp = _support_client().post(self._URL, json=self._valid_body(subject="s" * 141))
+        assert resp.status_code == 422
+
+    def test_message_over_max_returns_422(self):
+        """message > 8000 chars must be rejected with 422."""
+        resp = _support_client().post(self._URL, json=self._valid_body(message="m" * 8001))
+        assert resp.status_code == 422
