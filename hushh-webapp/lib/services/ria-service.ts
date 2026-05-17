@@ -121,6 +121,11 @@ export interface RiaLicenseVerificationResult {
   certifications?: string[];
   city?: string | null;
   pin_zip?: string | null;
+  state?: string | null;
+  area_locality?: string | null;
+  full_street_address?: string | null;
+  business_address?: string | null;
+  official_location?: Record<string, unknown> | null;
   crd_number?: string | null;
   sec_number?: string | null;
   employment_history?: Array<Record<string, unknown>>;
@@ -134,6 +139,10 @@ export interface RiaLicenseVerificationResult {
   services_offered?: string[];
   fee_structure?: string[];
   min_engagement_amount?: number | string | null;
+  cache_hit?: boolean;
+  cache_ttl_seconds?: number;
+  cached_at?: string | null;
+  cache_expires_at?: string | null;
 }
 
 export interface CrdScrapeJobResult {
@@ -1239,7 +1248,11 @@ export class RiaService {
 
   static async verifyOnboardingLicense(
     idToken: string,
-    payload: { license_number: string; regulator?: string },
+    payload: {
+      license_number: string;
+      regulator?: string;
+      force_live_verification?: boolean;
+    },
     options?: { signal?: AbortSignal },
   ): Promise<RiaLicenseVerificationResult> {
     const response = await authFetch("/api/ria/onboarding/verify-license", {
