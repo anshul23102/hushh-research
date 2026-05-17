@@ -1,6 +1,13 @@
 """
 Tests for the PKM Summary Reducer deterministic layers.
 
+Canonical attach point:
+    SummaryReducerAgent.reduce -> PKMAgentLabService.generate_structure_preview
+    -> POST /api/pkm/agent-lab/structure
+    (pkm.router -> api/routes/pkm.py -> PKMAgentLabService.generate_structure_preview
+     -> SummaryReducerAgent.reduce, which is the intended production consumer of
+     the three-layer privacy defence introduced in this PR)
+
 All tests are hermetic - no LLM, no DB, no network.
 
 Coverage:
@@ -19,6 +26,7 @@ Coverage:
 - SummaryReducerAgent.reduce: presence flags reflect data shape
 - SummaryReducerAgent.reduce: counts reflect list lengths
 - SummaryReducerAgent.reduce: freshness markers for ISO dates
+- Call proof: SummaryReducerAgent.reduce is callable and returns SummaryProjection
 """
 
 from __future__ import annotations
@@ -335,3 +343,46 @@ class TestSummaryReducerAgent:
         # Re-validate by round-tripping through dict
         reparsed = SummaryProjection(**result.model_dump())
         assert reparsed == result
+
+
+# ---------------------------------------------------------------------------
+# Call proof: SummaryReducerAgent.reduce is the canonical surface called from
+# PKMAgentLabService.generate_structure_preview -> POST /api/pkm/agent-lab/structure
+# ---------------------------------------------------------------------------
+
+
+class TestSummaryReducerAgentCallProof:
+    """Prove SummaryReducerAgent.reduce is directly callable and honours all three layers."""
+
+    def test_reduce_returns_summary_projection_instance(self):
+        """reduce() must return a SummaryProjection, not a plain dict."""
+        agent = SummaryReducerAgent()
+        result = agent.reduce("health", {"checkups": [1, 2], "last_visit": "2024-01-15"})
+        assert isinstance(result, SummaryProjection), (
+            "reduce() must return a SummaryProjection (Pydantic layer active)"
+        )
+
+    def test_reduce_strips_high_risk_keys_before_output(self):
+        """Pre-processing layer must remove high-risk keys so they never appear in output."""
+        agent = SummaryReducerAgent()
+        candidate = {
+            "balance": 99999,
+            "holdings": ["AAPL", "NVDA"],
+            "ssn": "123-45-6789",
+            "activity_count": 5,
+        }
+        result = agent.reduce("finance", candidate)
+        result_json = result.model_dump_json()
+        assert "99999" not in result_json
+        assert "AAPL" not in result_json
+        assert "123-45-6789" not in result_json
+
+    def test_reduce_output_fields_are_from_sanctioned_classes_only(self):
+        """SummaryProjection enforces the four sanctioned output classes."""
+        agent = SummaryReducerAgent()
+        result = agent.reduce("finance", {"accounts": [1], "last_updated": "2024-06-01"})
+        dump = result.model_dump()
+        allowed_keys = {"presence_flags", "counts", "freshness_markers", "sanctioned_capability_flags"}
+        assert set(dump.keys()) == allowed_keys, (
+            f"Output keys {set(dump.keys())} must match sanctioned classes {allowed_keys}"
+        )
