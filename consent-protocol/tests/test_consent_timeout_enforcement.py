@@ -35,6 +35,8 @@ from typing import Any, Dict
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 
 from hushh_mcp.services.consent_db import ConsentDBService
 
@@ -199,3 +201,61 @@ class TestConsentDBServiceGetPendingByRequestIdTimeoutGate:
 
         assert single_result is None, "get_pending_by_request_id must filter timed-out row"
         assert list_result == [], "get_pending_requests must also filter timed-out row"
+
+
+# ---------------------------------------------------------------------------
+# HTTP route-level proof (TestClient)
+#
+# Proves that the timeout gate is reachable from the shipped HTTP surface.
+# POST /api/consent/pending/approve calls get_pending_by_request_id; when
+# the service returns None (timed-out), the route must return 404.
+# ---------------------------------------------------------------------------
+
+
+class TestApproveConsentTimedOutRequestReturns404:
+    """
+    Route-level proof: api.routes.consent.approve_consent
+    (POST /api/consent/pending/approve) returns 404 when
+    get_pending_by_request_id returns None for a timed-out request.
+
+    Canonical attach point:
+      api.routes.consent.approve_consent
+        -> ConsentDBService.get_pending_by_request_id(userId, requestId)
+        -> returns None when poll_timeout_at has elapsed
+        -> route raises HTTPException(404, "Consent request not found")
+    """
+
+    def test_timed_out_request_returns_404(self, monkeypatch):
+        """A timed-out consent request must not be approved; route returns 404."""
+        from api.middleware import require_vault_owner_token
+        from api.routes.consent import router as consent_router
+        from hushh_mcp.services.consent_db import ConsentDBService
+
+        app = FastAPI()
+        app.include_router(consent_router)
+        app.dependency_overrides[require_vault_owner_token] = lambda: {
+            "user_id": _UID,
+            "token": "fake-vault-tok",
+            "scope": "vault.owner",
+        }
+
+        # Simulate the timeout gate: get_pending_by_request_id returns None
+        monkeypatch.setattr(
+            ConsentDBService,
+            "get_pending_by_request_id",
+            AsyncMock(return_value=None),
+        )
+
+        client = TestClient(app, raise_server_exceptions=False)
+        resp = client.post(
+            "/api/consent/pending/approve",
+            json={
+                "userId": _UID,
+                "requestId": _REQ_ID,
+                "agentId": "agent_kai",
+            },
+            headers={"Authorization": "Bearer fake-vault-tok"},
+        )
+
+        assert resp.status_code == 404
+        assert resp.json()["detail"] == "Consent request not found"
