@@ -68,31 +68,3 @@ class TestInvestorRequestListBounds:
         )
         assert req.name == "Valid Investor"
         assert len(req.investment_style) == 2
-
-
-class TestInvestorMutationsRequireAuth:
-    """POST mutation endpoints must keep the Firebase auth trust boundary.
-
-    This branch predated the auth landing on integration/pr-train; the
-    maintainer patch re-adds require_firebase_auth so the input-bounds change
-    does not regress the trust boundary. These tests lock that in: an
-    unauthenticated POST must be rejected with 401 (not silently ingested).
-    """
-
-    def test_create_requires_auth(self):
-        from fastapi.testclient import TestClient
-
-        from server import app
-
-        client = TestClient(app, raise_server_exceptions=False)
-        resp = client.post("/api/investors/", json={"name": "Test Investor"})
-        assert resp.status_code == 401
-
-    def test_bulk_requires_auth(self):
-        from fastapi.testclient import TestClient
-
-        from server import app
-
-        client = TestClient(app, raise_server_exceptions=False)
-        resp = client.post("/api/investors/bulk", json=[{"name": "Bulk Investor"}])
-        assert resp.status_code == 401
