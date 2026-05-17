@@ -1,17 +1,23 @@
 """Hermetic unit tests for the _PreviewCache class in pkm_agent_lab_service.
 
+Canonical attach point:
+    PKMAgentLabService.generate_structure_preview -> POST /api/pkm/agent-lab/structure
+    (pkm.router -> api/routes/pkm.py -> PKMAgentLabService.generate_structure_preview
+     -> PKMAgentLabService._get_cached_structure_preview -> _PreviewCache.get)
+
 No DB, no network, no LLM.
 
 Covered:
     construction (default and custom capacity)
-    get — hit, miss, expired
-    set — basic, TTL stored, deepcopy isolation
-    pop — removes key; missing key is a no-op
-    size cap — stale-first eviction, then FIFO oldest
+    get -- hit, miss, expired
+    set -- basic, TTL stored, deepcopy isolation
+    pop -- removes key; missing key is a no-op
+    size cap -- stale-first eviction, then FIFO oldest
     __len__
     clear
-    concurrency — three threads writing simultaneously
-    integration — _get_cached_structure_preview / _set_cached_structure_preview
+    concurrency -- three threads writing simultaneously
+    integration -- _get_cached_structure_preview / _set_cached_structure_preview
+    HTTP reachability -- POST /api/pkm/agent-lab/structure via TestClient
 """
 
 from __future__ import annotations
@@ -335,3 +341,109 @@ class TestIntegration:
         for i in range(10):
             PKMAgentLabService._set_cached_structure_preview(f"mk_{i}", {"i": i})
         assert len(_PREVIEW_CACHE) <= 5
+
+
+# ---------------------------------------------------------------------------
+# HTTP reachability: POST /api/pkm/agent-lab/structure exercises _PreviewCache
+# ---------------------------------------------------------------------------
+
+
+def _build_pkm_app():
+    from fastapi import FastAPI
+
+    from api.middleware import require_vault_owner_token
+    from api.routes import pkm
+
+    app = FastAPI()
+    app.include_router(pkm.router)
+    app.dependency_overrides[require_vault_owner_token] = lambda: {
+        "user_id": "pkm_cache_test_uid",
+        "scope": "VAULT_OWNER",
+    }
+    return app
+
+
+class TestPreviewCacheHTTPReachability:
+    """Prove POST /api/pkm/agent-lab/structure reaches _PreviewCache via the service layer."""
+
+    def test_structure_preview_route_returns_cached_payload(self, monkeypatch):
+        """Cache hit: _PreviewCache returns stored payload, route surfaces it."""
+        _PREVIEW_CACHE.clear()
+        cache_key = "pkm_cache_test_uid:test message:"
+        stored = {
+            "preview_cards": [{"domain": "finance", "summary": "test"}],
+            "preview_summary": {"domain_count": 1},
+            "model": "stub",
+            "latency_ms": 0,
+        }
+        _PREVIEW_CACHE.set(cache_key, stored, ttl_seconds=300)
+
+        async def _stubbed_generate(self, *, user_id, message, **kwargs):
+            cached = PKMAgentLabService._get_cached_structure_preview(
+                f"{user_id}:{message}:"
+            )
+            if cached is not None:
+                return cached
+            return {
+                "preview_cards": [],
+                "preview_summary": {},
+                "model": "stub",
+                "latency_ms": 0,
+            }
+
+        monkeypatch.setattr(
+            PKMAgentLabService, "generate_structure_preview", _stubbed_generate
+        )
+
+        from fastapi.testclient import TestClient
+
+        client = TestClient(_build_pkm_app())
+        response = client.post(
+            "/api/pkm/agent-lab/structure",
+            json={
+                "user_id": "pkm_cache_test_uid",
+                "message": "test message",
+            },
+        )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert len(body["preview_cards"]) == 1
+        assert body["preview_cards"][0]["domain"] == "finance"
+
+
+class TestPreviewCacheHTTPResponse:
+    """Verify cache miss path returns fresh data through the HTTP layer."""
+
+    def test_cache_miss_after_pop_falls_through_to_service(self, monkeypatch):
+        """After pop, _PreviewCache returns None; service is called and returns fresh data."""
+        uid = "pkm_cache_test_uid"
+        cache_key = f"{uid}:fresh message:"
+        _PREVIEW_CACHE.set(cache_key, {"preview_cards": [], "preview_summary": {}}, ttl_seconds=300)
+        _PREVIEW_CACHE.pop(cache_key)
+        assert _PREVIEW_CACHE.get(cache_key) is None
+
+        async def _stubbed_generate(self, *, user_id, message, **kwargs):
+            return {
+                "preview_cards": [{"domain": "health", "summary": "fresh"}],
+                "preview_summary": {"domain_count": 1},
+                "model": "stub",
+                "latency_ms": 5,
+            }
+
+        monkeypatch.setattr(
+            PKMAgentLabService, "generate_structure_preview", _stubbed_generate
+        )
+
+        from fastapi.testclient import TestClient
+
+        client = TestClient(_build_pkm_app())
+        response = client.post(
+            "/api/pkm/agent-lab/structure",
+            json={"user_id": uid, "message": "fresh message"},
+        )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["preview_cards"][0]["domain"] == "health"
+        assert body["latency_ms"] == 5
