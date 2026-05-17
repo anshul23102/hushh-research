@@ -1,14 +1,20 @@
 """Hermetic unit tests for _IdentitySyncCooldownStore in actor_identity_service.
 
+Canonical attach point:
+    ActorIdentityService.schedule_sync_from_firebase -> GET /api/user/lookup
+    (session.router -> api/routes/session.py -> ActorIdentityService.schedule_sync_from_firebase
+     -> _IDENTITY_SYNC_COOLDOWN_UNTIL.get/.set -> _IdentitySyncCooldownStore)
+
 No DB, no network, no LLM.
 
 Covered:
     construction (default and custom capacity)
-    get — hit, miss
-    set — basic, overwrites, deadline stored
-    size cap — stale-first eviction, then FIFO oldest
+    get -- hit, miss
+    set -- basic, overwrites, deadline stored
+    size cap -- stale-first eviction, then FIFO oldest
     __len__ and clear
-    concurrency — concurrent writers, concurrent reader+writer
+    concurrency -- concurrent writers, concurrent reader+writer
+    call proof -- schedule_sync_from_firebase reads and writes _IDENTITY_SYNC_COOLDOWN_UNTIL
 """
 
 from __future__ import annotations
@@ -21,6 +27,7 @@ import pytest
 from hushh_mcp.services.actor_identity_service import (
     _IDENTITY_SYNC_COOLDOWN_MAX,
     _IDENTITY_SYNC_COOLDOWN_UNTIL,
+    ActorIdentityService,
     _IdentitySyncCooldownStore,
 )
 
@@ -244,3 +251,63 @@ class TestConcurrency:
         for i in range(10):
             _IDENTITY_SYNC_COOLDOWN_UNTIL.set(f"uid_{i}", _future())
         assert len(_IDENTITY_SYNC_COOLDOWN_UNTIL) <= 5
+
+
+# ---------------------------------------------------------------------------
+# Call proof: schedule_sync_from_firebase -> _IDENTITY_SYNC_COOLDOWN_UNTIL
+#
+# GET /api/user/lookup (session.router) calls
+#   ActorIdentityService().schedule_sync_from_firebase(uid, force=False)
+# which is the canonical route into _IdentitySyncCooldownStore.
+# ---------------------------------------------------------------------------
+
+
+class TestScheduleSyncFromFirebaseCallProof:
+    """Prove schedule_sync_from_firebase reads and writes _IDENTITY_SYNC_COOLDOWN_UNTIL."""
+
+    def test_cooldown_written_on_first_call(self):
+        """schedule_sync_from_firebase sets a cooldown deadline on first call."""
+        import asyncio
+
+        uid = "schedulecallproof_uid_first"
+        _IDENTITY_SYNC_COOLDOWN_UNTIL.clear()
+        assert _IDENTITY_SYNC_COOLDOWN_UNTIL.get(uid) is None
+
+        async def _run():
+            ActorIdentityService().schedule_sync_from_firebase(uid, force=False)
+
+        asyncio.run(_run())
+        # Cooldown must have been written by schedule_sync_from_firebase.
+        assert _IDENTITY_SYNC_COOLDOWN_UNTIL.get(uid) is not None
+
+    def test_cooldown_prevents_duplicate_sync(self):
+        """Second call within cooldown window returns False without scheduling a new task."""
+        import asyncio
+
+        uid = "schedulecallproof_uid_dup"
+        _IDENTITY_SYNC_COOLDOWN_UNTIL.clear()
+
+        async def _run():
+            svc = ActorIdentityService()
+            first = svc.schedule_sync_from_firebase(uid, force=False)
+            second = svc.schedule_sync_from_firebase(uid, force=False)
+            return first, second
+
+        first, second = asyncio.run(_run())
+        # First call enters the scheduler; second is rejected by the cooldown.
+        assert first is True
+        assert second is False
+
+    def test_force_bypasses_cooldown(self):
+        """force=True schedules a sync even when a cooldown entry exists."""
+        import asyncio
+
+        uid = "schedulecallproof_uid_force"
+        _IDENTITY_SYNC_COOLDOWN_UNTIL.clear()
+        _IDENTITY_SYNC_COOLDOWN_UNTIL.set(uid, _future(3600))
+
+        async def _run():
+            return ActorIdentityService().schedule_sync_from_firebase(uid, force=True)
+
+        result = asyncio.run(_run())
+        assert result is True
