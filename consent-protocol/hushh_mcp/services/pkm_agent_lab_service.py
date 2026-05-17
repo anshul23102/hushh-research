@@ -12,6 +12,7 @@ from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
+from hushh_mcp.agents.summary_reducer import SummaryReducerAgent
 from hushh_mcp.constants import GEMINI_MODEL
 from hushh_mcp.hushh_adk.manifest import ManifestLoader
 from hushh_mcp.services.domain_contracts import CANONICAL_DOMAIN_REGISTRY
@@ -4258,6 +4259,12 @@ class PKMAgentLabService:
         strict_small_model: bool = False,
         domain_registry_override: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
+        # SECURITY: redact high-risk keys and validate output shape before the
+        # simulated_state dict reaches any LLM prompt.  SummaryReducerAgent runs
+        # only the deterministic layers (no LLM call), so this is zero-latency.
+        if simulated_state is not None:
+            simulated_state = SummaryReducerAgent().reduce(simulated_state, run_llm=False).model_dump()
+
         total_started_at = time.perf_counter()
         normalized_domains = [
             self._normalize_segment(domain) for domain in (current_domains or []) if domain

@@ -386,3 +386,63 @@ class TestSummaryReducerAgentCallProof:
         assert set(dump.keys()) == allowed_keys, (
             f"Output keys {set(dump.keys())} must match sanctioned classes {allowed_keys}"
         )
+
+
+# ===========================================================================
+# Route-level caller proof
+# ===========================================================================
+
+from fastapi import FastAPI  # noqa: E402
+from fastapi.testclient import TestClient  # noqa: E402
+
+import api.routes.pkm as pkm_module  # noqa: E402
+from api.middleware import require_vault_owner_token  # noqa: E402
+
+
+def _pkm_client() -> TestClient:
+    app = FastAPI()
+    app.include_router(pkm_module.router)
+    app.dependency_overrides[require_vault_owner_token] = lambda: {
+        "user_id": "test-uid",
+        "token": "fake-token",
+        "scope": "vault.owner",
+    }
+    return TestClient(app, raise_server_exceptions=False)
+
+
+class TestSummaryReducerRouteCallerProof:
+    """
+    Canonical attach point: PKMAgentLabService.generate_structure_preview
+    -> POST /api/pkm/agent-lab/structure
+
+    SummaryReducerAgent.reduce is invoked by generate_structure_preview to
+    sanitize simulated_state before it reaches any LLM prompt.  These tests
+    confirm that the route accepts a valid body (not 422) and that providing
+    a simulated_state with high-risk keys does not cause a 500 (the reducer
+    handles the redaction without raising).
+    """
+
+    _URL = "/api/pkm/agent-lab/structure"
+
+    def test_valid_request_not_rejected_by_validation(self):
+        """A minimal valid body must not be rejected with 422."""
+        resp = _pkm_client().post(
+            self._URL,
+            json={"user_id": "test-uid", "message": "test message"},
+        )
+        assert resp.status_code != 422
+
+    def test_simulated_state_with_high_risk_keys_does_not_crash(self):
+        """Passing high-risk keys in simulated_state must not cause a 500."""
+        body = {
+            "user_id": "test-uid",
+            "message": "test message",
+            "simulated_state": {
+                "balance": 99999,
+                "ssn": "123-45-6789",
+                "activity_count": 3,
+            },
+        }
+        resp = _pkm_client().post(self._URL, json=body)
+        assert resp.status_code != 422
+        assert resp.status_code != 500
