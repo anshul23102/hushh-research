@@ -955,18 +955,18 @@ class ConsentDBService:
             .execute()
         )
 
-        # Get total count via separate query (capped at 5000 for display)
+        # Use DB-side exact count instead of fetching up to 5000 rows and
+        # counting in Python.  The count is returned as response.count when
+        # the Supabase client is asked for count="exact".
         count_response = (
             supabase.table("consent_audit")
-            .select("id")
+            .select("id", count="exact")
             .eq("user_id", user_id)
-            .limit(5000)
+            .limit(0)
             .execute()
         )
         filtered_rows = [row for row in (response.data or []) if self._is_external_audit_row(row)]
-        total = len(
-            [row for row in (count_response.data or []) if self._is_external_audit_row(row)]
-        )
+        total: int = count_response.count if count_response.count is not None else 0
 
         items = []
         for row in filtered_rows:
