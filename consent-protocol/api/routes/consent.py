@@ -240,9 +240,13 @@ class RelationshipDisconnectRequest(BaseModel):
 
 
 class RefreshExportUploadRequest(BaseModel):
+    """
+    Canonical attach point: api.routes.consent.upload_refreshed_export -> POST /api/consent/export-refresh/upload
+    """
+
     userId: str = Field(min_length=1, max_length=128)
     consentToken: str = Field(min_length=1, max_length=2048)
-    encryptedData: str = Field(min_length=1)
+    encryptedData: str = Field(min_length=1, max_length=10_000_000)
     encryptedIv: str = Field(min_length=1, max_length=256)
     encryptedTag: str = Field(min_length=1, max_length=256)
     wrappedExportKey: str = Field(min_length=1, max_length=8192)
