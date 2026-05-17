@@ -411,7 +411,7 @@ class ConsentApprovalPayload(BaseModel):
     Integrated by Abdul Gaffar — canonical field-level validation logic.
     """
 
-    model_config = ConfigDict(extra="allow")
+    model_config = ConfigDict(extra="ignore")
 
     version: int = Field(default=1, ge=1, le=2)
 
