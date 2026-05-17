@@ -1,16 +1,21 @@
 # tests/test_logout_auth.py
 """
-Regression tests for the missing authentication on POST /api/consent/logout.
+Route-level caller proof for the missing authentication fix on POST /api/consent/logout.
 
-Before the fix the endpoint had no authentication: any caller could pass any
+Canonical attach point
+----------------------
+api.routes.session.logout_session
+  -> POST /api/consent/logout
+  -> requires Authorization: Bearer <firebase-id-token>
+  -> verifies request.userId == firebase-verified UID
+  -> 401 for missing/invalid token, 403 for userId mismatch
+
+Before the fix this endpoint had no authentication: any caller could pass any
 userId and receive {"status": "success"} without proving their identity.
 
-After the fix the endpoint:
-1. Requires a valid Firebase ID token in the Authorization header.
-2. Validates that request.userId matches the authenticated Firebase UID.
-3. Returns 401 for missing/invalid tokens and 403 for user mismatches.
-
-All tests are hermetic: no network, no DB, no Firebase calls.
+All tests exercise the route through TestClient (real HTTP stack) with
+api.routes.session.verify_firebase_bearer monkeypatched.
+No network, no DB, no Firebase calls.
 """
 
 from __future__ import annotations
