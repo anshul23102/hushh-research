@@ -148,8 +148,8 @@ async def get_investor(investor_id: int):
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error fetching investor {investor_id}: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error("investors.get_failed investor_id=%s error=%s", investor_id, e)
+        raise HTTPException(status_code=500, detail="Failed to fetch investor")
 
 
 @router.get("/cik/{cik}", response_model=InvestorProfile)
@@ -228,8 +228,8 @@ async def create_investor(investor: InvestorCreateRequest):
         return {"id": result.get("id"), "name": investor.name, "status": "created"}
 
     except Exception as e:
-        logger.error(f"Error creating investor: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error("investors.create_failed name=%s error=%s", investor.name, e)
+        raise HTTPException(status_code=500, detail="Failed to create investor profile")
 
 
 @router.post("/bulk", status_code=201)
