@@ -3,12 +3,15 @@ Push notification token registration for consent (FCM/APNs).
 
 Stores device tokens so the notification worker can send push when consent
 requests are created (WhatsApp-style delivery when app is closed).
+
+Canonical attach point: api.routes.notifications.register_push_token -> POST /api/notifications/register
 """
 
 import logging
 from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Request
+from fastapi.concurrency import run_in_threadpool
 
 from api.utils.firebase_auth import verify_firebase_bearer
 from hushh_mcp.services.push_tokens_service import PushTokensService
@@ -29,7 +32,7 @@ async def register_push_token(request: Request):
     One token per user per platform (latest wins). Requires Firebase ID token.
     """
     auth_header = request.headers.get("Authorization")
-    firebase_uid = verify_firebase_bearer(auth_header)
+    firebase_uid = await run_in_threadpool(verify_firebase_bearer, auth_header)
 
     try:
         body = await request.json()
@@ -76,7 +79,7 @@ async def unregister_push_token(request: Request):
     Otherwise all tokens for the user are removed.
     """
     auth_header = request.headers.get("Authorization")
-    firebase_uid = verify_firebase_bearer(auth_header)
+    firebase_uid = await run_in_threadpool(verify_firebase_bearer, auth_header)
 
     try:
         body = await request.json()
