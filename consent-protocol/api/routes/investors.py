@@ -11,6 +11,13 @@ The data here is NOT encrypted (it's all from public SEC filings).
 Privacy architecture:
 - investor_profiles = PUBLIC (SEC filings, read-only)
 - user_investor_profiles = PRIVATE (E2E encrypted, consent required)
+
+Canonical attach point:
+    api.routes.investors.get_investor_stats -> GET /api/investors/stats
+
+Route order note: /stats MUST be declared before /{investor_id} so FastAPI
+does not capture the literal string "stats" as an integer investor_id (which
+would return 422 for every /stats request).
 """
 
 import json
@@ -123,6 +130,16 @@ async def search_investors(
 
     logger.info(f"Search '{name}' returned {len(results)} results")
     return results
+
+
+@router.get("/stats")
+async def get_investor_stats():
+    """Get statistics about investor profiles."""
+    # Use service layer
+    service = InvestorDBService()
+    stats = await service.get_investor_stats()
+
+    return {"total_profiles": stats.get("total", 0), "by_type": stats.get("by_type", {})}
 
 
 @router.get("/{investor_id}", response_model=InvestorProfile)
@@ -259,12 +276,3 @@ async def bulk_create_investors(
 
     return {"created": len(results), "profiles": results}
 
-
-@router.get("/stats")
-async def get_stats():
-    """Get statistics about investor profiles."""
-    # Use service layer
-    service = InvestorDBService()
-    stats = await service.get_investor_stats()
-
-    return {"total_profiles": stats.get("total", 0), "by_type": stats.get("by_type", {})}
