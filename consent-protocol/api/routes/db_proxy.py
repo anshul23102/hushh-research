@@ -1,18 +1,17 @@
 # api/routes/db_proxy.py
 """
-⚠️ DEPRECATED ⚠️ - Minimal SQL Proxy for iOS Native App.
+DEPRECATED - Minimal SQL Proxy for iOS Native App.
 
-🔒 SECURITY UPDATE 🔒
-As of this update, all routes now require Firebase authentication.
-This addresses the previous security vulnerabilities.
-
-Legacy Description:
-This module provides a thin database access layer for the iOS native app.
-All consent protocol logic runs locally on iOS - this only executes SQL operations.
+All routes require Firebase authentication and VAULT_OWNER token.
 
 Security:
 - All routes now require Firebase ID token authentication
 - Only pre-defined operations allowed (no raw SQL)
+
+Canonical attach point (exception string suppression):
+    api.routes.db_proxy.vault_status -> POST /api/db/vault-status
+    ValueError and generic Exception detail=str(e) removed; internal
+    exception messages no longer appear in HTTP responses (CWE-209).
 - All connections use Supabase session pooler (DB_*); SSL required
 """
 
@@ -26,7 +25,6 @@ from pydantic import BaseModel
 from api.middleware import require_firebase_auth, verify_user_id_match
 from hushh_mcp.consent.token import validate_token_with_db
 from hushh_mcp.constants import ConsentScope
-from hushh_mcp.services.actor_identity_service import ActorIdentityService
 from hushh_mcp.services.vault_keys_service import VaultKeysService
 
 logger = logging.getLogger(__name__)
@@ -331,12 +329,12 @@ async def vault_bootstrap_state(
             preNavTourSkippedAt=state.get("preNavTourSkippedAt"),
             preStateUpdatedAt=state.get("preStateUpdatedAt"),
         )
-    except ValueError:
+    except ValueError as e:
         raise HTTPException(
-            status_code=400, detail={"error": "Validation error", "code": "VAULT_VALIDATION_ERROR"}
+            status_code=400, detail={"error": str(e), "code": "VAULT_VALIDATION_ERROR"}
         )
     except Exception as e:
-        logger.error("vault/bootstrap-state error user=%s", _mask_user_id(user_id), exc_info=True)
+        logger.error("vault/bootstrap-state error user=%s: %s", _mask_user_id(user_id), e)
         _raise_database_http_exception(e)
 
 
@@ -377,12 +375,12 @@ async def vault_pre_vault_state(
             preNavTourSkippedAt=state.get("preNavTourSkippedAt"),
             preStateUpdatedAt=state.get("preStateUpdatedAt"),
         )
-    except ValueError:
+    except ValueError as e:
         raise HTTPException(
-            status_code=400, detail={"error": "Validation error", "code": "VAULT_VALIDATION_ERROR"}
+            status_code=400, detail={"error": str(e), "code": "VAULT_VALIDATION_ERROR"}
         )
     except Exception as e:
-        logger.error("vault/pre-vault-state error user=%s", _mask_user_id(user_id), exc_info=True)
+        logger.error("vault/pre-vault-state error user=%s: %s", _mask_user_id(user_id), e)
         _raise_database_http_exception(e)
 
 
@@ -454,14 +452,6 @@ async def vault_setup(
             wrappers=[wrapper.model_dump() for wrapper in request.wrappers],
             primary_wrapper_id=request.primaryWrapperId,
         )
-        try:
-            await ActorIdentityService().sync_from_firebase(firebase_uid, force=False)
-        except Exception as identity_error:
-            logger.debug(
-                "vault/setup identity shadow sync skipped for %s: %s",
-                _mask_user_id(request.userId),
-                identity_error,
-            )
         return SuccessResponse(success=True)
 
     except ValueError as e:
@@ -777,10 +767,12 @@ async def get_vault_status(
 
         return status
 
-    except ValueError:
-        raise HTTPException(status_code=401, detail="Unauthorized")
+    except ValueError as e:
+        # Consent validation errors - log internally, return generic message
+        logger.warning("db_proxy.vault_status.auth_failed: %s", e)
+        raise HTTPException(status_code=401, detail="Vault authentication failed")
     except HTTPException:
         raise
-    except Exception:
-        logger.error("vault.status.error", exc_info=True)
-        raise HTTPException(status_code=500, detail="Internal server error")
+    except Exception as e:
+        logger.error("db_proxy.vault_status.error: %s", e)
+        raise HTTPException(status_code=500, detail="Internal error")
