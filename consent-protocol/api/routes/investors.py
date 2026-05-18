@@ -11,6 +11,15 @@ The data here is NOT encrypted (it's all from public SEC filings).
 Privacy architecture:
 - investor_profiles = PUBLIC (SEC filings, read-only)
 - user_investor_profiles = PRIVATE (E2E encrypted, consent required)
+
+Canonical attach points
+-----------------------
+api.routes.investors.search_investors     -> GET /api/investors/search
+api.routes.investors.get_investor         -> GET /api/investors/{investor_id}
+api.routes.investors.get_investor_by_cik  -> GET /api/investors/cik/{cik}
+api.routes.investors.create_investor      -> POST /api/investors/
+api.routes.investors.bulk_create_investors-> POST /api/investors/bulk
+api.routes.investors.get_stats            -> GET /api/investors/stats
 """
 
 import json
@@ -121,7 +130,7 @@ async def search_investors(
     service = InvestorDBService()
     results = await service.search_investors(name=name, limit=limit)
 
-    logger.info(f"Search '{name}' returned {len(results)} results")
+    logger.info("investors.search name=%r returned %d results", name, len(results))
     return results
 
 
@@ -142,14 +151,14 @@ async def get_investor(investor_id: int):
         if not profile:
             raise HTTPException(status_code=404, detail="Investor not found")
 
-        logger.info(f"Retrieved investor {investor_id}: {profile['name']}")
+        logger.info("investors.get_investor id=%s name=%r", investor_id, profile["name"])
         return profile
 
     except HTTPException:
         raise
-    except Exception:
-        logger.error("investor.fetch.error investor_id=%s", investor_id, exc_info=True)
-        raise HTTPException(status_code=500, detail="Internal server error")
+    except Exception as e:
+        logger.error("investors.get_investor.error id=%s: %s", investor_id, e)
+        raise HTTPException(status_code=500, detail="Failed to retrieve investor profile")
 
 
 @router.get("/cik/{cik}", response_model=InvestorProfile)
@@ -224,12 +233,14 @@ async def create_investor(investor: InvestorCreateRequest):
         # Use service method
         result = await service.upsert_investor(data, upsert_key="cik" if investor.cik else None)
 
-        logger.info(f"Created/updated investor profile: {investor.name} (id={result.get('id')})")
+        logger.info(
+            "investors.create name=%r id=%s", investor.name, result.get("id")
+        )
         return {"id": result.get("id"), "name": investor.name, "status": "created"}
 
-    except Exception:
-        logger.error("investor.create.error", exc_info=True)
-        raise HTTPException(status_code=500, detail="Internal server error")
+    except Exception as e:
+        logger.error("investors.create.error name=%r: %s", investor.name, e)
+        raise HTTPException(status_code=500, detail="Failed to create investor profile")
 
 
 @router.post("/bulk", status_code=201)
@@ -255,7 +266,7 @@ async def bulk_create_investors(
         result = await create_investor(investor)
         results.append(result)
 
-    logger.info(f"Bulk created {len(results)} investor profiles")
+    logger.info("investors.bulk_create created=%d", len(results))
 
     return {"created": len(results), "profiles": results}
 
