@@ -2,6 +2,12 @@
 Ticker search routes (public)
 
 GET /api/tickers/search?q=...&limit=10
+
+Attach points:
+- GET  /api/tickers/search          search_tickers
+- GET  /api/tickers/all             all_tickers
+- GET  /api/tickers/cache-status    ticker_cache_status
+- POST /api/tickers/sync-holdings/{user_id}  sync_tickers_from_holdings
 """
 
 import logging
@@ -43,9 +49,9 @@ async def search_tickers(
         service = TickerDBService()
         results = await service.search_tickers(q, limit=limit)
         return results
-    except Exception:
-        logger.error("ticker.search.error", exc_info=True)
-        raise HTTPException(status_code=500, detail="Internal server error")
+    except Exception as e:
+        logger.error("tickers.search.error: %s", e)
+        raise HTTPException(status_code=500, detail="Ticker search failed")
 
 
 @router.get("/all", response_model=List[dict])
@@ -57,9 +63,9 @@ async def all_tickers(refresh: bool = Query(False)):
             ticker_cache.load_from_db()
 
         return ticker_cache.all()
-    except Exception:
-        logger.error("ticker.all.error", exc_info=True)
-        raise HTTPException(status_code=500, detail="Internal server error")
+    except Exception as e:
+        logger.error("tickers.all.error: %s", e)
+        raise HTTPException(status_code=500, detail="Failed to retrieve ticker list")
 
 
 @router.get("/cache-status")
@@ -95,6 +101,6 @@ async def sync_tickers_from_holdings(
             refresh_cache=request.refresh_cache,
         )
         return {"success": True, **result}
-    except Exception:
-        logger.error("ticker.sync_holdings.error user_id=%s", user_id, exc_info=True)
-        raise HTTPException(status_code=500, detail="Internal server error")
+    except Exception as e:
+        logger.error("tickers.sync_holdings.error user_id=%s: %s", user_id, e)
+        raise HTTPException(status_code=500, detail="Failed to sync ticker holdings")
