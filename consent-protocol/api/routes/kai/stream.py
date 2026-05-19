@@ -121,25 +121,25 @@ async def _require_vault_owner_token(
 class StreamAnalyzeRequest(BaseModel):
     """Request for streaming analysis."""
 
-    user_id: str
-    ticker: str
-    risk_profile: str = "balanced"
+    user_id: str = Field(..., min_length=1, max_length=128)
+    ticker: str = Field(..., min_length=1, max_length=10)
+    risk_profile: str = Field(default="balanced", max_length=50)
     context: Optional[Dict[str, Any]] = None
-    run_id: Optional[str] = None
+    run_id: Optional[str] = Field(default=None, max_length=128)
     resume_cursor: Optional[int] = Field(default=0, ge=0)
 
 
 class StartAnalyzeRunRequest(BaseModel):
     """Request to create or attach to a session-locked analysis run."""
 
-    user_id: str
-    debate_session_id: str
-    ticker: str
-    risk_profile: str = "balanced"
+    user_id: str = Field(..., min_length=1, max_length=128)
+    debate_session_id: str = Field(..., min_length=1, max_length=128)
+    ticker: str = Field(..., min_length=1, max_length=10)
+    risk_profile: str = Field(default="balanced", max_length=50)
     context: Optional[Dict[str, Any]] = None
-    pick_source: Optional[str] = None
-    pick_source_label: Optional[str] = None
-    pick_source_kind: Optional[str] = None
+    pick_source: Optional[str] = Field(default=None, max_length=100)
+    pick_source_label: Optional[str] = Field(default=None, max_length=200)
+    pick_source_kind: Optional[str] = Field(default=None, max_length=50)
 
 
 # ============================================================================
