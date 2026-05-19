@@ -1,10 +1,9 @@
-"""CRD Scraper proxy routes with bounded path parameters (CWE-400)."""
-
 from __future__ import annotations
 
-from typing import Annotated, Any
+import logging
+from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Path, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator
 
@@ -16,9 +15,9 @@ from hushh_mcp.services.crd_scrape_proxy_service import (
     normalize_crd_number,
 )
 
-router = APIRouter(prefix="/api/ria", tags=["RIA", "CRD Scraper"])
+logger = logging.getLogger(__name__)
 
-_JobId = Annotated[str, Path(min_length=1, max_length=128)]
+router = APIRouter(prefix="/api/ria", tags=["RIA", "CRD Scraper"])
 
 
 class CrdScrapeJobRequest(BaseModel):
@@ -59,7 +58,7 @@ async def create_crd_scrape_job(
 @router.get("/crd-scrape-jobs/{job_id}")
 @limiter.limit("60/minute")
 async def get_crd_scrape_job(
-    job_id: _JobId,
+    job_id: str,
     request: Request,
     service: CrdScrapeProxyService = Depends(get_crd_scrape_proxy_service),
 ) -> JSONResponse:
@@ -91,7 +90,7 @@ async def create_financial_verification_job(
 @router.get("/financial-verification-jobs/{job_id}")
 @limiter.limit("60/minute")
 async def get_financial_verification_job(
-    job_id: _JobId,
+    job_id: str,
     request: Request,
     service: CrdScrapeProxyService = Depends(get_crd_scrape_proxy_service),
 ) -> JSONResponse:
@@ -107,11 +106,9 @@ async def get_financial_verification_job(
 async def _call_provider(coro: Any) -> CrdScrapeProviderResponse:
     try:
         return await coro
-    except ValueError:
-        raise HTTPException(
-            status_code=422,
-            detail={"code": "CRD_INVALID_REQUEST", "message": "Invalid request parameters."},
-        )
+    except ValueError as exc:
+        logger.warning("CRD provider validation error: %s", exc)
+        raise HTTPException(status_code=422, detail="Invalid request data") from exc
     except CrdScrapeProxyError as exc:
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
 
