@@ -131,7 +131,7 @@ def retrieve_decision_card(
         return decision_card
     except Exception as e:
         logger.error(f"[Storage Operon] Decryption failed: {e}")
-        raise ValueError(f"Failed to decrypt decision card: {e}")
+        raise ValueError(f"Failed to decrypt decision card: {e}") from e
 
 
 # ============================================================================

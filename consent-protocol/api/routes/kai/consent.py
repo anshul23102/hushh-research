@@ -93,7 +93,7 @@ async def grant_consent(
 
         except Exception as e:
             logger.error("Failed to issue token for scope %s: %s", scope_str, e)
-            raise HTTPException(status_code=400, detail=f"Invalid scope: {scope_str}")
+            raise HTTPException(status_code=400, detail=f"Invalid scope: {scope_str}") from e
 
     if not tokens:
         raise HTTPException(status_code=400, detail="No valid scopes provided")

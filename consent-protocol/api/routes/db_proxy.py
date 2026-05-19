@@ -26,7 +26,6 @@ from pydantic import BaseModel
 from api.middleware import require_firebase_auth, verify_user_id_match
 from hushh_mcp.consent.token import validate_token_with_db
 from hushh_mcp.constants import ConsentScope
-from hushh_mcp.services.actor_identity_service import ActorIdentityService
 from hushh_mcp.services.vault_keys_service import VaultKeysService
 
 logger = logging.getLogger(__name__)
@@ -331,12 +330,12 @@ async def vault_bootstrap_state(
             preNavTourSkippedAt=state.get("preNavTourSkippedAt"),
             preStateUpdatedAt=state.get("preStateUpdatedAt"),
         )
-    except ValueError:
+    except ValueError as e:
         raise HTTPException(
-            status_code=400, detail={"error": "Validation error", "code": "VAULT_VALIDATION_ERROR"}
-        )
+            status_code=400, detail={"error": str(e), "code": "VAULT_VALIDATION_ERROR"}
+        ) from e
     except Exception as e:
-        logger.error("vault/bootstrap-state error user=%s", _mask_user_id(user_id), exc_info=True)
+        logger.error("vault/bootstrap-state error user=%s: %s", _mask_user_id(user_id), e)
         _raise_database_http_exception(e)
 
 
@@ -377,12 +376,12 @@ async def vault_pre_vault_state(
             preNavTourSkippedAt=state.get("preNavTourSkippedAt"),
             preStateUpdatedAt=state.get("preStateUpdatedAt"),
         )
-    except ValueError:
+    except ValueError as e:
         raise HTTPException(
-            status_code=400, detail={"error": "Validation error", "code": "VAULT_VALIDATION_ERROR"}
-        )
+            status_code=400, detail={"error": str(e), "code": "VAULT_VALIDATION_ERROR"}
+        ) from e
     except Exception as e:
-        logger.error("vault/pre-vault-state error user=%s", _mask_user_id(user_id), exc_info=True)
+        logger.error("vault/pre-vault-state error user=%s: %s", _mask_user_id(user_id), e)
         _raise_database_http_exception(e)
 
 
@@ -454,14 +453,6 @@ async def vault_setup(
             wrappers=[wrapper.model_dump() for wrapper in request.wrappers],
             primary_wrapper_id=request.primaryWrapperId,
         )
-        try:
-            await ActorIdentityService().sync_from_firebase(firebase_uid, force=False)
-        except Exception as identity_error:
-            logger.debug(
-                "vault/setup identity shadow sync skipped for %s: %s",
-                _mask_user_id(request.userId),
-                identity_error,
-            )
         return SuccessResponse(success=True)
 
     except ValueError as e:
@@ -473,10 +464,10 @@ async def vault_setup(
                     "error": message,
                     "code": "VAULT_PRIMARY_WRAPPER_NOT_FOUND",
                 },
-            )
+            ) from e
         raise HTTPException(
             status_code=400, detail={"error": message, "code": "VAULT_VALIDATION_ERROR"}
-        )
+        ) from e
     except Exception as e:
         logger.error(
             "vault/setup error user=%s wrappers=%s methods=%s: %s",
@@ -531,10 +522,10 @@ async def vault_wrapper_upsert(
             raise HTTPException(
                 status_code=400,
                 detail={"error": message, "code": "VAULT_PASSKEY_RP_MISMATCH"},
-            )
+            ) from e
         raise HTTPException(
             status_code=400, detail={"error": message, "code": "VAULT_VALIDATION_ERROR"}
-        )
+        ) from e
     except Exception as e:
         logger.error(
             "vault/wrapper/upsert error user=%s method=%s: %s",
@@ -595,7 +586,7 @@ async def vault_wrapper_delete(
             code = "VAULT_PASSPHRASE_REQUIRED"
         elif "Fallback primary method/wrapper" in message:
             code = "VAULT_PRIMARY_WRAPPER_NOT_FOUND"
-        raise HTTPException(status_code=400, detail={"error": message, "code": code})
+        raise HTTPException(status_code=400, detail={"error": message, "code": code}) from e
     except Exception as e:
         logger.error(
             "vault/wrapper/delete error user=%s method=%s: %s",
@@ -636,10 +627,10 @@ async def vault_primary_set(
             raise HTTPException(
                 status_code=400,
                 detail={"error": message, "code": "VAULT_PRIMARY_WRAPPER_NOT_FOUND"},
-            )
+            ) from e
         raise HTTPException(
             status_code=400, detail={"error": message, "code": "VAULT_VALIDATION_ERROR"}
-        )
+        ) from e
     except Exception as e:
         logger.error(
             "vault/primary/set error user=%s primary=%s: %s",
@@ -777,10 +768,11 @@ async def get_vault_status(
 
         return status
 
-    except ValueError:
-        raise HTTPException(status_code=401, detail="Unauthorized")
+    except ValueError as e:
+        # Consent validation errors
+        raise HTTPException(status_code=401, detail=str(e)) from e
     except HTTPException:
         raise
-    except Exception:
-        logger.error("vault.status.error", exc_info=True)
-        raise HTTPException(status_code=500, detail="Internal server error")
+    except Exception as e:
+        logger.error(f"❌ Vault status error: {e}")
+        raise HTTPException(status_code=500, detail=str(e)) from e

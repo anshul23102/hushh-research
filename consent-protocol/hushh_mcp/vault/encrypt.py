@@ -38,7 +38,7 @@ def encrypt_data(plaintext: str, key_hex: str) -> EncryptedPayload:
             algorithm=ALGORITHM_NAME,
         )
     except Exception as e:
-        raise RuntimeError(f"Encryption failed: {str(e)}")
+        raise RuntimeError(f"Encryption failed: {str(e)}") from e
 
 
 # ==================== Decrypt ====================
@@ -59,6 +59,6 @@ def decrypt_data(payload: EncryptedPayload, key_hex: str) -> str:
         return decrypted.decode("utf-8")
 
     except InvalidTag:
-        raise ValueError("Decryption failed: Invalid authentication tag. Possible tampering.")
+        raise ValueError("Decryption failed: Invalid authentication tag. Possible tampering.") from None
     except Exception as e:
-        raise RuntimeError(f"Decryption failed: {str(e)}")
+        raise RuntimeError(f"Decryption failed: {str(e)}") from e
