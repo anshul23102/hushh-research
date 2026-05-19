@@ -54,7 +54,7 @@ async def read_resource(uri: str) -> str:
 
     # Normalize: MCP SDK may pass AnyUrl; some hosts add trailing slash
     uri_str = str(uri).strip().rstrip("/")
-    logger.info(f"📖 Reading resource: {uri_str}")
+    logger.info("📖 Reading resource: %s", uri_str)
 
     if uri_str == "hushh://info/server":
         return json.dumps(SERVER_INFO, indent=2)
@@ -258,5 +258,5 @@ async def read_resource(uri: str) -> str:
         return json.dumps(lifecycle, indent=2)
 
     else:
-        logger.warning(f"❌ Unknown resource URI: {uri_str}")
+        logger.warning("❌ Unknown resource URI: %s", uri_str)
         return json.dumps({"error": f"Unknown resource: {uri_str}"})

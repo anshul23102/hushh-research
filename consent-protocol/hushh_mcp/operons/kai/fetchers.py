@@ -747,7 +747,7 @@ async def fetch_market_data_batch(
         )
 
         if not valid:
-            logger.error("[Market Data Batch Fetcher] trust_link_check_failed")
+            logger.error("[Market Data Batch Fetcher] TrustLink validation failed: %s", reason)
             raise PermissionError(f"Market data access denied: {reason}")
 
         if token.user_id != user_id:
@@ -875,13 +875,13 @@ async def fetch_sec_filings(
     )
 
     if not valid:
-        logger.error("[SEC Fetcher] trust_link_check_failed")
+        logger.error("[SEC Fetcher] TrustLink validation failed: %s", reason)
         raise PermissionError(f"SEC data access denied: {reason}")
 
     if token.user_id != user_id:
         raise PermissionError("Token user mismatch")
 
-    logger.info("[SEC Fetcher] Fetching filings for %s (user=[redacted])", ticker)
+    logger.info("[SEC Fetcher] Fetching filings for %s - user %s", ticker, user_id)
 
     # SEC EDGAR API Implementation
     # Reference: https://www.sec.gov/edgar/sec-api-documentation
@@ -1090,7 +1090,7 @@ async def fetch_sec_filings(
             )
 
         except Exception as facts_error:
-            logger.warning("[SEC Fetcher] company_facts_unavailable")
+            logger.warning("[SEC Fetcher] Could not fetch company facts: %s", facts_error)
             raise RealtimeDataUnavailable(
                 "sec_filings",
                 f"SEC companyfacts unavailable for {ticker}: {facts_error}",
@@ -1177,13 +1177,13 @@ async def fetch_market_news(
         )
 
         if not valid:
-            logger.error("[News Fetcher] trust_link_check_failed")
+            logger.error("[News Fetcher] TrustLink validation failed: %s", reason)
             raise PermissionError(f"News data access denied: {reason}")
 
         if token.user_id != user_id:
             raise PermissionError("Token user mismatch")
 
-    logger.info("[News Fetcher] Fetching news for %s (user=[redacted])", ticker)
+    logger.info("[News Fetcher] Fetching news for %s - user %s", ticker, user_id)
 
     errors: list[str] = []
     articles: list[Dict[str, Any]] = []
@@ -1315,7 +1315,7 @@ async def fetch_market_data(
         )
 
         if not valid:
-            logger.error("[Market Data Fetcher] trust_link_check_failed")
+            logger.error("[Market Data Fetcher] TrustLink validation failed: %s", reason)
             raise PermissionError(f"Market data access denied: {reason}")
 
         if token.user_id != user_id:
@@ -1505,7 +1505,7 @@ async def fetch_peer_data(
     if token.user_id != user_id:
         raise PermissionError("Token user mismatch")
 
-    logger.info("[Peer Data Fetcher] Fetching peers for %s (user=[redacted])", ticker)
+    logger.info("[Peer Data Fetcher] Fetching peers for %s - user %s", ticker, user_id)
 
     peers: list[str] = []
     errors: list[str] = []

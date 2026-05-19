@@ -491,7 +491,7 @@ Your mission is to perform a high-conviction, data-driven "Earnings Quality & Mo
 
     except asyncio.TimeoutError:
         logger.warning(
-            f"[Gemini Operon] Gemini timed out for {ticker}; falling back to deterministic analysis"
+            "[Gemini Operon] Gemini timed out for %s; falling back to deterministic analysis", ticker
         )
         return {"error": "Gemini timeout", "fallback": True}
     except Exception as e:
