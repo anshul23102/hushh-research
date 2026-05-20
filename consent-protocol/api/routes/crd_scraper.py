@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Path, Request
 from fastapi.responses import JSONResponse
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator
 
@@ -15,6 +15,11 @@ from hushh_mcp.services.crd_scrape_proxy_service import (
 )
 
 router = APIRouter(prefix="/api/ria", tags=["RIA", "CRD Scraper"])
+
+# Max length for job ID path parameters. UUIDs are 36 chars; allow extra headroom.
+_JOB_ID_MAX_LEN = 128
+
+JobId = Annotated[str, Path(min_length=1, max_length=_JOB_ID_MAX_LEN)]
 
 
 class CrdScrapeJobRequest(BaseModel):
@@ -55,7 +60,7 @@ async def create_crd_scrape_job(
 @router.get("/crd-scrape-jobs/{job_id}")
 @limiter.limit("60/minute")
 async def get_crd_scrape_job(
-    job_id: str,
+    job_id: JobId,
     request: Request,
     service: CrdScrapeProxyService = Depends(get_crd_scrape_proxy_service),
 ) -> JSONResponse:
@@ -87,7 +92,7 @@ async def create_financial_verification_job(
 @router.get("/financial-verification-jobs/{job_id}")
 @limiter.limit("60/minute")
 async def get_financial_verification_job(
-    job_id: str,
+    job_id: JobId,
     request: Request,
     service: CrdScrapeProxyService = Depends(get_crd_scrape_proxy_service),
 ) -> JSONResponse:
