@@ -6,15 +6,18 @@ Regulated cutover rules:
 - Consent SSE is disabled in production by default.
 - When enabled, caller must provide Firebase bearer token and matching user_id.
 - Consent polling endpoint is deprecated and disabled.
+
+Attach point for CWE-400 path-param bound:
+  GET /api/consent/events/{user_id}  user_id  max_length=128
 """
 
 import asyncio
 import json
 import logging
 import os
-from typing import AsyncGenerator, Optional
+from typing import Annotated, AsyncGenerator, Optional
 
-from fastapi import APIRouter, Header, HTTPException, Request
+from fastapi import APIRouter, Header, HTTPException, Path, Request
 from sse_starlette.sse import EventSourceResponse
 
 from api.utils.firebase_auth import verify_firebase_bearer
@@ -26,6 +29,11 @@ from hushh_mcp.services.consent_request_links import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/consent", tags=["SSE"])
+
+# CWE-400: Firebase UIDs are 28 chars; 128 is a generous ceiling that prevents
+# arbitrarily long user_id strings from reaching the consent queue lookup.
+_USER_ID_MAX_LEN: int = 128
+UserId = Annotated[str, Path(min_length=1, max_length=_USER_ID_MAX_LEN)]
 
 
 def _env_truthy(name: str, fallback: str = "false") -> bool:
@@ -220,7 +228,7 @@ async def consent_event_generator(user_id: str, request: Request) -> AsyncGenera
 
 @router.get("/events/{user_id}")
 async def consent_events(
-    user_id: str,
+    user_id: UserId,
     request: Request,
     authorization: Optional[str] = Header(None, description="Bearer Firebase ID token"),
 ):
