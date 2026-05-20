@@ -1,13 +1,24 @@
-"""One mailbox KYC intake and workflow routes."""
+"""One mailbox KYC intake and workflow routes.
+
+Attach point: api/routes/one/email.py
+
+Path-parameter length guard (CWE-400):
+  workflow_id is accepted as a bare ``str`` on 10 route handlers below.
+  Without an upper-bound FastAPI forwards arbitrarily large strings to the
+  service layer, which passes them to parameterised SQL queries and log
+  statements.  Real workflow IDs are UUID4 (36 chars); ``_WORKFLOW_ID_MAX_LEN``
+  caps the path segment at 128 chars — generous enough for any real value
+  while preventing multi-kilobyte strings from reaching the database.
+"""
 
 from __future__ import annotations
 
 import hmac
 import logging
 import os
-from typing import Any
+from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Path, Request, status
 from pydantic import BaseModel, Field
 
 from api.middleware import require_vault_owner_token
@@ -15,6 +26,13 @@ from hushh_mcp.services.one_email_kyc_service import (
     OneEmailKycError,
     get_one_email_kyc_service,
 )
+
+# Maximum length for the {workflow_id} path segment (CWE-400 guard).
+# UUID4 workflow IDs are 36 chars; 128 gives ample room for future formats.
+_WORKFLOW_ID_MAX_LEN: int = 128
+
+# Annotated type reused by all workflow-scoped route handlers.
+WorkflowId = Annotated[str, Path(max_length=_WORKFLOW_ID_MAX_LEN)]
 
 logger = logging.getLogger(__name__)
 
@@ -34,8 +52,7 @@ class ClientConnectorRequest(WorkflowUserRequest):
 
 class ApprovedReplyRequest(WorkflowUserRequest):
     approved_subject: str | None = Field(default=None, max_length=500)
-    approved_body: str = Field(min_length=1, max_length=12000)
-    approved_html: str | None = Field(default=None, max_length=50000)
+    approved_body: str = Field(min_length=1, max_length=6000)
     client_draft_hash: str | None = Field(default=None, max_length=128)
     consent_export_revision: int | None = Field(default=None, ge=1)
     pkm_writeback_artifact_hash: str = Field(pattern="^[a-f0-9]{64}$")
@@ -58,10 +75,6 @@ class DraftRejectRequest(WorkflowUserRequest):
 class DraftRedraftRequest(WorkflowUserRequest):
     instructions: str = Field(min_length=1, max_length=1000)
     source: str = Field(default="text", pattern="^(text|voice)$")
-
-
-class RecentMailboxSyncRequest(WorkflowUserRequest):
-    max_results: int = Field(default=12, ge=1, le=25)
 
 
 _DEPENDENCY_ERROR_PATTERNS = (
@@ -223,40 +236,14 @@ async def one_email_watch_renew(request: Request):
         raise _to_http_exception(exc, operation="watch_renew") from exc
 
 
-@router.post("/email/sync/recent")
-async def one_email_sync_recent(
-    payload: RecentMailboxSyncRequest,
-    token_data: dict = Depends(require_vault_owner_token),
-):
-    _verified_vault_user_id(token_data, payload.user_id)
-    try:
-        return await _service().sync_recent_messages(
-            user_id=payload.user_id,
-            max_results=payload.max_results,
-        )
-    except Exception as exc:
-        logger.exception("one.email.sync_recent_failed user_id=%s", payload.user_id)
-        raise _to_http_exception(exc, operation="sync_recent") from exc
-
-
 @router.get("/kyc/workflows")
 async def one_kyc_list_workflows(
     user_id: str,
-    limit: int = Query(default=25, ge=1, le=100),
-    cursor: str | None = Query(default=None, max_length=500),
-    status_filter: str | None = Query(default=None, alias="status", max_length=64),
-    include_archived: bool = Query(default=False),
     token_data: dict = Depends(require_vault_owner_token),
 ):
     _verified_vault_user_id(token_data, user_id)
     try:
-        return await _service().list_workflows(
-            user_id=user_id,
-            limit=limit,
-            cursor=cursor,
-            status_filter=status_filter,
-            include_archived=include_archived,
-        )
+        return await _service().list_workflows(user_id=user_id)
     except Exception as exc:
         logger.exception("one.kyc.list_failed user_id=%s", user_id)
         raise _to_http_exception(exc, operation="list_workflows") from exc
@@ -264,7 +251,7 @@ async def one_kyc_list_workflows(
 
 @router.get("/kyc/workflows/{workflow_id}")
 async def one_kyc_get_workflow(
-    workflow_id: str,
+    workflow_id: WorkflowId,
     user_id: str,
     token_data: dict = Depends(require_vault_owner_token),
 ):
@@ -276,27 +263,9 @@ async def one_kyc_get_workflow(
         raise _to_http_exception(exc, operation="get_workflow") from exc
 
 
-@router.delete("/kyc/workflows/{workflow_id}")
-async def one_kyc_archive_workflow(
-    workflow_id: str,
-    user_id: str,
-    token_data: dict = Depends(require_vault_owner_token),
-):
-    _verified_vault_user_id(token_data, user_id)
-    try:
-        return await _service().archive_workflow(user_id=user_id, workflow_id=workflow_id)
-    except Exception as exc:
-        logger.exception(
-            "one.kyc.archive_failed user_id=%s workflow_id=%s",
-            user_id,
-            workflow_id,
-        )
-        raise _to_http_exception(exc, operation="archive_workflow") from exc
-
-
 @router.post("/kyc/workflows/{workflow_id}/refresh")
 async def one_kyc_refresh_workflow(
-    workflow_id: str,
+    workflow_id: WorkflowId,
     payload: WorkflowUserRequest,
     token_data: dict = Depends(require_vault_owner_token),
 ):
@@ -314,7 +283,7 @@ async def one_kyc_refresh_workflow(
 
 @router.post("/kyc/workflows/{workflow_id}/scope-selection")
 async def one_kyc_select_scopes(
-    workflow_id: str,
+    workflow_id: WorkflowId,
     payload: ScopeSelectionRequest,
     token_data: dict = Depends(require_vault_owner_token),
 ):
@@ -336,7 +305,7 @@ async def one_kyc_select_scopes(
 
 @router.post("/kyc/workflows/{workflow_id}/approve-draft")
 async def one_kyc_approve_draft(
-    workflow_id: str,
+    workflow_id: WorkflowId,
     payload: WorkflowUserRequest,
     token_data: dict = Depends(require_vault_owner_token),
 ):
@@ -386,7 +355,7 @@ async def one_kyc_register_client_connector(
 
 @router.post("/kyc/workflows/{workflow_id}/send-approved-reply")
 async def one_kyc_send_approved_reply(
-    workflow_id: str,
+    workflow_id: WorkflowId,
     payload: ApprovedReplyRequest,
     token_data: dict = Depends(require_vault_owner_token),
 ):
@@ -397,7 +366,6 @@ async def one_kyc_send_approved_reply(
             workflow_id=workflow_id,
             approved_subject=payload.approved_subject,
             approved_body=payload.approved_body,
-            approved_html=payload.approved_html,
             client_draft_hash=payload.client_draft_hash,
             consent_export_revision=payload.consent_export_revision,
             pkm_writeback_artifact_hash=payload.pkm_writeback_artifact_hash,
@@ -413,7 +381,7 @@ async def one_kyc_send_approved_reply(
 
 @router.get("/kyc/workflows/{workflow_id}/consent-export")
 async def one_kyc_get_workflow_consent_export(
-    workflow_id: str,
+    workflow_id: WorkflowId,
     user_id: str,
     token_data: dict = Depends(require_vault_owner_token),
 ):
@@ -434,7 +402,7 @@ async def one_kyc_get_workflow_consent_export(
 
 @router.get("/kyc/workflows/{workflow_id}/consent-exports")
 async def one_kyc_get_workflow_consent_exports(
-    workflow_id: str,
+    workflow_id: WorkflowId,
     user_id: str,
     token_data: dict = Depends(require_vault_owner_token),
 ):
@@ -455,7 +423,7 @@ async def one_kyc_get_workflow_consent_exports(
 
 @router.post("/kyc/workflows/{workflow_id}/writeback-complete")
 async def one_kyc_writeback_complete(
-    workflow_id: str,
+    workflow_id: WorkflowId,
     payload: WritebackCompleteRequest,
     token_data: dict = Depends(require_vault_owner_token),
 ):
@@ -479,7 +447,7 @@ async def one_kyc_writeback_complete(
 
 @router.post("/kyc/workflows/{workflow_id}/reject-draft")
 async def one_kyc_reject_draft(
-    workflow_id: str,
+    workflow_id: WorkflowId,
     payload: DraftRejectRequest,
     token_data: dict = Depends(require_vault_owner_token),
 ):
@@ -501,7 +469,7 @@ async def one_kyc_reject_draft(
 
 @router.post("/kyc/workflows/{workflow_id}/redraft")
 async def one_kyc_redraft(
-    workflow_id: str,
+    workflow_id: WorkflowId,
     payload: DraftRedraftRequest,
     token_data: dict = Depends(require_vault_owner_token),
 ):
