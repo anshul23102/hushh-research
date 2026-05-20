@@ -18,14 +18,14 @@ Additionally regresses:
   - G004: logger calls in the same file converted to %-style.
 """
 
+import ast
+import pathlib
 import time
-from unittest.mock import patch
 
 import pytest
 
 from hushh_mcp.consent.token import (
     _BoundedRevocationCache,
-    issue_token,
     validate_token,
 )
 
@@ -197,9 +197,6 @@ def test_malformed_token_reason_is_opaque(bad_token):
 # validate_token — G004 + logging: no f-string loggers remain
 # ===========================================================================
 
-
-import ast
-import pathlib
 
 REPO_ROOT = pathlib.Path(__file__).parent.parent
 TOKEN_PY = REPO_ROOT / "hushh_mcp/consent/token.py"
