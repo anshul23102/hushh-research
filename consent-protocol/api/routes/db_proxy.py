@@ -295,7 +295,7 @@ async def vault_check(
         return VaultCheckResponse(hasVault=has_vault)
 
     except Exception as e:
-        logger.error(f"vault/check error: {e}")
+        logger.error("vault/check error: %s", e)
         _raise_database_http_exception(e)
 
 
@@ -332,7 +332,7 @@ async def vault_bootstrap_state(
         )
     except ValueError as e:
         raise HTTPException(
-            status_code=400, detail={"error": str(e), "code": "VAULT_VALIDATION_ERROR"}
+            status_code=400, detail={"error": "Vault validation failed", "code": "VAULT_VALIDATION_ERROR"}
         ) from e
     except Exception as e:
         logger.error("vault/bootstrap-state error user=%s: %s", _mask_user_id(user_id), e)
@@ -378,7 +378,7 @@ async def vault_pre_vault_state(
         )
     except ValueError as e:
         raise HTTPException(
-            status_code=400, detail={"error": str(e), "code": "VAULT_VALIDATION_ERROR"}
+            status_code=400, detail={"error": "Vault validation failed", "code": "VAULT_VALIDATION_ERROR"}
         ) from e
     except Exception as e:
         logger.error("vault/pre-vault-state error user=%s: %s", _mask_user_id(user_id), e)
@@ -412,7 +412,7 @@ async def vault_get(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"vault/get error: {e}")
+        logger.error("vault/get error: %s", e)
         _raise_database_http_exception(e)
 
 
@@ -708,10 +708,10 @@ async def validate_vault_owner_token(consent_token: str, user_id: str) -> None:
     valid, reason, token_obj = await validate_token_with_db(consent_token, ConsentScope.VAULT_OWNER)
 
     if not valid:
-        logger.warning(f"Invalid consent token: {reason}")
+        logger.warning("Invalid consent token: %s", reason)
         raise HTTPException(
             status_code=401,
-            detail=f"Invalid consent token: {reason}",
+            detail="Invalid or expired consent token",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
@@ -725,18 +725,20 @@ async def validate_vault_owner_token(consent_token: str, user_id: str) -> None:
 
     if token_obj.scope != ConsentScope.VAULT_OWNER:
         logger.warning(
-            f"Insufficient scope: {token_obj.scope.value} (requires {ConsentScope.VAULT_OWNER.value})"
+            "Insufficient scope: %s (requires %s)",
+            token_obj.scope.value,
+            ConsentScope.VAULT_OWNER.value,
         )
         raise HTTPException(
             status_code=403,
-            detail=f"Insufficient scope: {token_obj.scope.value}. VAULT_OWNER scope required.",
+            detail="Insufficient scope: VAULT_OWNER scope required",
         )
 
     if str(token_obj.user_id) != user_id:
-        logger.warning(f"Token userId mismatch: {token_obj.user_id} != {user_id}")
+        logger.warning("Token userId mismatch: %s != %s", token_obj.user_id, user_id)
         raise HTTPException(status_code=403, detail="Token userId does not match requested userId")
 
-    logger.info(f"✅ VAULT_OWNER token validated for {user_id}")
+    logger.info("VAULT_OWNER token validated for user=%s", user_id)
 
 
 @router.post("/vault/status")
@@ -769,10 +771,11 @@ async def get_vault_status(
         return status
 
     except ValueError as e:
-        # Consent validation errors
-        raise HTTPException(status_code=401, detail=str(e)) from e
+        # Consent validation errors — do not surface internal message to caller.
+        logger.warning("Vault status consent validation failed: %s", e)
+        raise HTTPException(status_code=401, detail="Invalid or expired consent token") from e
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"❌ Vault status error: {e}")
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        logger.error("Vault status error: %s", e)
+        raise HTTPException(status_code=500, detail="Vault status check failed") from e
