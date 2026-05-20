@@ -2,6 +2,8 @@
 """
 Kai Portfolio API Route - Portfolio import and analysis endpoints.
 
+Attach point: api/routes/kai/portfolio.py
+
 Handles:
 - File upload (CSV/PDF) for brokerage statements
 - Portfolio summary retrieval
@@ -12,6 +14,13 @@ Authentication:
 - All endpoints require VAULT_OWNER token (consent-first architecture)
 - Token contains user_id, proving both identity and consent
 - Firebase is only used for bootstrap (issuing VAULT_OWNER token)
+
+Path/query-parameter length guards (CWE-400):
+  Several route handlers accept ``user_id`` and ``run_id`` as bare ``str``
+  path or query parameters.  Without an upper bound FastAPI forwards
+  arbitrarily large strings to log statements and DB queries.
+  ``_USER_ID_MAX_LEN`` and ``_RUN_ID_MAX_LEN`` cap these values before they
+  propagate downstream.
 """
 
 import asyncio
@@ -23,9 +32,19 @@ import re
 import time
 from collections import Counter
 from datetime import datetime, timezone
-from typing import Any, AsyncGenerator, Optional
+from typing import Annotated, Any, AsyncGenerator, Optional
 
-from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request, UploadFile, status
+from fastapi import (
+    APIRouter,
+    Depends,
+    Form,
+    HTTPException,
+    Path,
+    Query,
+    Request,
+    UploadFile,
+    status,
+)
 from pydantic import BaseModel, Field
 from sse_starlette.sse import EventSourceResponse
 
@@ -75,6 +94,16 @@ _PICK_TICKER_RE = re.compile(r"^[A-Z][A-Z0-9.\-]{0,9}$")
 _MAX_PROFILE_PICKS = 8
 _MAX_IMPORT_FILE_BYTES = 25 * 1024 * 1024
 _MAX_IMPORT_FILE_SIZE_MESSAGE = "File too large. Maximum size is 25MB."
+
+# CWE-400: upper bounds for path/query string parameters.
+# Firebase UIDs are 28 chars; 128 is a safe ceiling.
+# Run IDs are UUID4 (36 chars); 128 gives room for future formats.
+_USER_ID_MAX_LEN: int = 128
+_RUN_ID_MAX_LEN: int = 128
+
+# Reusable Annotated types for route parameters.
+UserId = Annotated[str, Path(max_length=_USER_ID_MAX_LEN)]
+RunId = Annotated[str, Path(max_length=_RUN_ID_MAX_LEN)]
 
 _NUMERIC_STRIP_RE = re.compile(r"[$,\s]")
 _FILENAME_DATE_RE = re.compile(r"(20\d{2}-\d{2}-\d{2})")
@@ -2134,7 +2163,7 @@ async def import_portfolio(
 
 @router.get("/portfolio/summary/{user_id}", response_model=PortfolioSummaryResponse)
 async def get_portfolio_summary(
-    user_id: str,
+    user_id: UserId,
     token_data: dict = Depends(require_vault_owner_token),
 ) -> PortfolioSummaryResponse:
     """
@@ -2189,7 +2218,7 @@ async def get_portfolio_summary(
 
 @router.get("/dashboard/profile-picks/{user_id}", response_model=DashboardProfilePicksResponse)
 async def get_dashboard_profile_picks(
-    user_id: str,
+    user_id: UserId,
     symbols: Optional[str] = Query(
         default=None,
         description="Optional comma-separated ticker symbols from current holdings context.",
@@ -3217,7 +3246,7 @@ async def start_portfolio_import_run(
 
 @router.get("/portfolio/import/run/active")
 async def get_active_portfolio_import_run(
-    user_id: str,
+    user_id: str = Query(..., max_length=_USER_ID_MAX_LEN),
     token_data: dict = Depends(require_vault_owner_token),
 ):
     if token_data["user_id"] != user_id:
@@ -3231,8 +3260,8 @@ async def get_active_portfolio_import_run(
 @router.get("/portfolio/import/run/{run_id}/stream")
 async def stream_portfolio_import_run(
     request: Request,
-    run_id: str,
-    user_id: str,
+    run_id: RunId,
+    user_id: str = Query(..., max_length=_USER_ID_MAX_LEN),
     cursor: Optional[int] = 0,
     token_data: dict = Depends(require_vault_owner_token),
 ):
@@ -3275,8 +3304,8 @@ async def stream_portfolio_import_run(
 
 @router.post("/portfolio/import/run/{run_id}/cancel")
 async def cancel_portfolio_import_run(
-    run_id: str,
-    user_id: str,
+    run_id: RunId,
+    user_id: str = Query(..., max_length=_USER_ID_MAX_LEN),
     token_data: dict = Depends(require_vault_owner_token),
 ):
     if token_data["user_id"] != user_id:
