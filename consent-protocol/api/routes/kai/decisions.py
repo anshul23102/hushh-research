@@ -7,9 +7,9 @@ Write operations remain client-side via POST /api/pkm/store-domain.
 """
 
 import logging
-from typing import Dict, List
+from typing import Annotated, Dict, List
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, status
 from pydantic import BaseModel
 
 from api.middleware import require_vault_owner_token
@@ -18,6 +18,14 @@ from hushh_mcp.services.personal_knowledge_model_service import get_pkm_service
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+# ---------------------------------------------------------------------------
+# Path-parameter bounds (CWE-400 Uncontrolled Resource Consumption)
+# Attach point: GET /api/kai/decisions/{user_id}
+# ---------------------------------------------------------------------------
+_USER_ID_MAX_LEN: int = 128
+
+UserId = Annotated[str, Path(min_length=1, max_length=_USER_ID_MAX_LEN)]
 
 
 # ============================================================================
@@ -37,7 +45,7 @@ class DecisionHistoryResponse(BaseModel):
 
 @router.get("/decisions/{user_id}", response_model=DecisionHistoryResponse)
 async def get_decision_history(
-    user_id: str,
+    user_id: UserId,
     limit: int = Query(default=50, le=100),
     offset: int = Query(default=0, ge=0),
     token_data: dict = Depends(require_vault_owner_token),
