@@ -46,8 +46,15 @@ class _BoundedRevocationCache:
         with self._lock:
             self._evict_expired_locked(now_ms)
             if len(self._entries) >= self._MAX_SIZE:
+                # TTL eviction alone did not free space — all remaining entries
+                # are still within their grace window.  Evict the one whose
+                # revocation marker will become redundant soonest (smallest
+                # evict_after_ms), because once a token's own expiry passes,
+                # validate_token() rejects it independently of the cache.
+                oldest_key = min(self._entries, key=lambda k: self._entries[k])
+                del self._entries[oldest_key]
                 logger.warning(
-                    "revocation_cache.size_cap_exceeded size=%s max_size=%s",
+                    "revocation_cache.size_cap_hit evicted_oldest size=%s max_size=%s",
                     len(self._entries),
                     self._MAX_SIZE,
                 )
@@ -291,10 +298,10 @@ def validate_token(
         )
         return True, None, token
 
-    except (ValueError, UnicodeDecodeError, binascii.Error) as e:
-        return False, f"Malformed token: {str(e)}", None
+    except (ValueError, UnicodeDecodeError, binascii.Error):
+        return False, "Malformed token", None
     except Exception as e:
-        logger.error(f"Unexpected error during token validation: {e}", exc_info=True)
+        logger.error("Unexpected error during token validation: %s", e, exc_info=True)
         raise
 
 
@@ -341,7 +348,7 @@ async def validate_token_with_db(
 
                 # Add to in-memory set for future fast checks
                 _revoked_tokens.add(token_str)
-                logger.warning(f"Token revoked in DB but not in memory: {token_str[:30]}...")
+                logger.warning("Token found revoked in DB but not in in-memory cache")
                 return False, "Token has been revoked (DB check)", None
     except Exception as e:
         # DB is unreachable — apply fail-closed policy based on token scope.
