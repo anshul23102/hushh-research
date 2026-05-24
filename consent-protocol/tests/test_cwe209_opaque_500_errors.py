@@ -16,15 +16,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-import api.routes.tickers as tickers_module
-from api.routes.tickers import router as tickers_router
-from api.middleware import require_vault_owner_token
-
-import api.routes.kai.chat as chat_module
-from api.routes.kai.chat import router as chat_router
-
 import api.routes.account as account_module
+import api.routes.kai.chat as chat_module
+import api.routes.tickers as tickers_module
+from api.middleware import require_vault_owner_token
 from api.routes.account import router as account_router
+from api.routes.kai.chat import router as chat_router
+from api.routes.tickers import router as tickers_router
 
 _LEAK = "internal database connection string host=prod-db port=5432 password=secret"
 
