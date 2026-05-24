@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
@@ -30,6 +30,26 @@ class CrdScrapeJobRequest(BaseModel):
     @classmethod
     def normalize_crd(cls, value: str) -> str:
         return str(normalize_crd_number(value))
+
+
+class FinancialVerificationJobRequest(BaseModel):
+    """Typed request body for POST /api/ria/financial-verification-jobs.
+
+    Canonical attach point:
+        api.routes.crd_scraper.create_financial_verification_job
+        -> POST /api/ria/financial-verification-jobs
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    crdNumber: str = Field(
+        ...,
+        min_length=1,
+        max_length=10,
+        description="CRD registration number (digits only, max 10 characters).",
+    )
+    userId: Optional[str] = Field(default=None, min_length=1, max_length=128)
+    requestId: Optional[str] = Field(default=None, min_length=1, max_length=128)
 
 
 def get_crd_scrape_proxy_service() -> CrdScrapeProxyService:
@@ -71,13 +91,13 @@ async def get_crd_scrape_job(
 @router.post("/financial-verification-jobs")
 @limiter.limit("10/minute")
 async def create_financial_verification_job(
-    payload: dict[str, Any],
+    payload: FinancialVerificationJobRequest,
     request: Request,
     service: CrdScrapeProxyService = Depends(get_crd_scrape_proxy_service),
 ) -> JSONResponse:
     result = await _call_provider(
         service.create_financial_verification_job(
-            payload=payload,
+            payload=payload.model_dump(exclude_none=True),
             request_id=_request_id(request),
         )
     )

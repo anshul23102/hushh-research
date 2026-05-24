@@ -2,7 +2,7 @@
 """
 Consent management endpoints (pending, approve, deny, revoke, history, active).
 
-NOTE: Uses dynamic attr.{domain}.* scopes instead of legacy vault.read.*/vault.write.* scopes.
+NOTE: Uses dynamic attr.{domain}.* scopes instead of legacy vault wildcard scopes.
 Legacy scopes are mapped to dynamic scopes for backward compatibility.
 
 SECURITY: All consent management endpoints require VAULT_OWNER token authentication.
@@ -53,6 +53,29 @@ _CONSENT_STORAGE_ERROR_PATTERNS = (
     "timeout",
 )
 _CONNECTOR_WRAPPING_ALG = "X25519-AES256-GCM"
+
+
+async def _owned_consent_identifiers(user_id: str) -> list[str]:
+    try:
+        identifiers = await ActorIdentityService().list_account_identifiers(user_id)
+    except Exception as exc:
+        logger.debug(
+            "consent.identifier_expansion_skipped user_id=%s error=%s",
+            user_id,
+            exc,
+        )
+        identifiers = []
+    return identifiers or [user_id]
+
+
+def _identifier_filter_kwargs(user_id: str, identifiers: list[str]) -> dict[str, list[str]]:
+    normalized_user_id = str(user_id or "").strip()
+    normalized_identifiers = [
+        str(item or "").strip() for item in identifiers if str(item or "").strip()
+    ]
+    if set(normalized_identifiers) <= {normalized_user_id}:
+        return {}
+    return {"user_ids": normalized_identifiers}
 
 
 def _clean_text(value: object | None) -> str:
@@ -277,7 +300,11 @@ async def get_pending_consents(
 
     service = ConsentDBService()
     try:
-        pending_from_db = await service.get_pending_requests(userId)
+        owned_identifiers = await _owned_consent_identifiers(userId)
+        pending_from_db = await service.get_pending_requests(
+            userId,
+            **_identifier_filter_kwargs(userId, owned_identifiers),
+        )
         pending_from_db = await _hydrate_pending_requester_labels(pending_from_db)
         logger.info("consent.pending_fetched count=%s", len(pending_from_db))
         return {"pending": pending_from_db}
@@ -292,6 +319,58 @@ async def get_pending_consents(
         raise
 
 
+@router.get("/pending/lookup")
+async def lookup_pending_consents(
+    userId: str,
+    request_id: list[str] | None = Query(default=None),
+    token_data: dict = Depends(require_vault_owner_token),
+):
+    """
+    Resolve specific pending consent requests by canonical request id.
+
+    This is intentionally uncached and request-id scoped so product surfaces that
+    hold cross-links to consent requests do not reconstruct consent payloads from
+    feature-local workflow state.
+    """
+    if token_data["user_id"] != userId:
+        raise HTTPException(status_code=403, detail="User ID does not match authenticated user")
+
+    request_ids = []
+    seen: set[str] = set()
+    for value in request_id or []:
+        normalized = _clean_text(value)
+        if not normalized or normalized in seen:
+            continue
+        if len(normalized) > 128:
+            raise HTTPException(status_code=400, detail="request_id is too long.")
+        seen.add(normalized)
+        request_ids.append(normalized)
+
+    if not request_ids:
+        raise HTTPException(status_code=400, detail="At least one request_id is required.")
+    if len(request_ids) > 25:
+        raise HTTPException(status_code=400, detail="At most 25 request ids can be looked up.")
+
+    service = ConsentDBService()
+    items = []
+    missing_request_ids = []
+    for request_id_value in request_ids:
+        pending = await service.get_pending_by_request_id(userId, request_id_value)
+        if pending:
+            items.append(pending)
+        else:
+            missing_request_ids.append(request_id_value)
+
+    logger.info(
+        "consent.pending_lookup user_id=%s requested=%s found=%s missing=%s",
+        userId,
+        len(request_ids),
+        len(items),
+        len(missing_request_ids),
+    )
+    return {"items": items, "missing_request_ids": missing_request_ids}
+
+
 @router.post("/pending/opened")
 async def mark_pending_consent_opened(
     body: PendingConsentOpenedRequest,
@@ -301,11 +380,13 @@ async def mark_pending_consent_opened(
         raise HTTPException(status_code=403, detail="User ID does not match authenticated user")
 
     service = ConsentDBService()
+    owned_identifiers = await _owned_consent_identifiers(body.userId)
     opened = await service.mark_pending_request_opened(
         user_id=body.userId,
         request_id=body.requestId,
         bundle_id=body.bundleId,
         opened_via=body.openedVia,
+        **_identifier_filter_kwargs(body.userId, owned_identifiers),
     )
     if opened is None:
         return {"ok": True, "acknowledged": False}
@@ -436,10 +517,16 @@ async def approve_consent(
 
     # Get pending request from database
     service = ConsentDBService()
-    pending_request = await service.get_pending_by_request_id(userId, requestId)
+    owned_identifiers = await _owned_consent_identifiers(userId)
+    pending_request = await service.get_pending_by_request_id(
+        userId,
+        requestId,
+        **_identifier_filter_kwargs(userId, owned_identifiers),
+    )
 
     if not pending_request:
         raise HTTPException(status_code=404, detail="Consent request not found")
+    subject_user_id = str(pending_request.get("user_id") or userId).strip() or userId
 
     # Issue consent token - map scope to ConsentScope enum using centralized resolver
     requested_scope = pending_request["scope"]
@@ -480,6 +567,7 @@ async def approve_consent(
         userId,
         agent_id=pending_request["developer"],
         requested_scope=requested_scope,
+        **_identifier_filter_kwargs(userId, owned_identifiers),
     )
     if existing_token and is_developer_request:
         existing_export = await service.get_consent_export_metadata(
@@ -504,6 +592,15 @@ async def approve_consent(
         elif existing_export.get("refresh_status") != "current":
             logger.info(
                 "consent.token_reuse_skipped_stale_export scope=%s token=%s",
+                requested_scope,
+                str(existing_token.get("token_id") or "")[:32],
+            )
+            existing_token = None
+        elif requested_scope.startswith("attr.") and not isinstance(
+            existing_export.get("source_content_revision"), int
+        ):
+            logger.info(
+                "consent.token_reuse_skipped_missing_source_revision scope=%s token=%s",
                 requested_scope,
                 str(existing_token.get("token_id") or "")[:32],
             )
@@ -533,6 +630,18 @@ async def approve_consent(
 
         reuse_metadata = dict(metadata) if isinstance(metadata, dict) else {}
         reuse_metadata["reused_consent_token"] = True
+        if subject_user_id != userId:
+            await service.insert_event(
+                user_id=subject_user_id,
+                agent_id=pending_request["developer"],
+                scope=requested_scope,
+                action="CONSENT_GRANTED",
+                token_id=existing_token.get("token_id"),
+                request_id=requestId,
+                scope_description=get_scope_description(requested_scope),
+                expires_at=existing_token.get("expires_at"),
+                metadata=reuse_metadata,
+            )
         await service.insert_event(
             user_id=userId,
             agent_id=pending_request["developer"],
@@ -660,6 +769,17 @@ async def approve_consent(
     granted_event_metadata = dict(metadata) if isinstance(metadata, dict) else {}
 
     # Log CONSENT_GRANTED with the normalized requested scope string.
+    if subject_user_id != userId:
+        await service.insert_event(
+            user_id=subject_user_id,
+            agent_id=pending_request["developer"],
+            scope=requested_scope,
+            action="CONSENT_GRANTED",
+            token_id=token.token,
+            request_id=requestId,
+            expires_at=token.expires_at,
+            metadata=granted_event_metadata,
+        )
     await service.insert_event(
         user_id=userId,
         agent_id=pending_request["developer"],
@@ -677,6 +797,7 @@ async def approve_consent(
         userId,
         agent_id=pending_request["developer"],
         requested_scope=requested_scope,
+        **_identifier_filter_kwargs(userId, owned_identifiers),
     )
     for index, superseded_token in enumerate(superseded_tokens):
         superseded_scope = str(superseded_token.get("scope") or "").strip()
@@ -695,7 +816,7 @@ async def approve_consent(
             "superseded_by_token_id": token.token,
         }
         await service.insert_event(
-            user_id=userId,
+            user_id=str(superseded_token.get("user_id") or subject_user_id),
             agent_id=pending_request["developer"],
             scope=superseded_scope,
             action="REVOKED",
@@ -751,10 +872,16 @@ async def deny_consent(
 
     # Get pending request from database
     service = ConsentDBService()
-    pending_request = await service.get_pending_by_request_id(userId, requestId)
+    owned_identifiers = await _owned_consent_identifiers(userId)
+    pending_request = await service.get_pending_by_request_id(
+        userId,
+        requestId,
+        **_identifier_filter_kwargs(userId, owned_identifiers),
+    )
 
     if not pending_request:
         raise HTTPException(status_code=404, detail="Consent request not found")
+    subject_user_id = str(pending_request.get("user_id") or userId).strip() or userId
 
     metadata = pending_request.get("metadata", {})
     developer_label = (
@@ -763,7 +890,7 @@ async def deny_consent(
 
     # Log CONSENT_DENIED to database
     await service.insert_event(
-        user_id=userId,
+        user_id=subject_user_id,
         agent_id=pending_request["developer"],
         scope=pending_request["scope"],
         action="CONSENT_DENIED",
@@ -802,12 +929,20 @@ async def cancel_consent(
     logger.info("consent.cancel_requested")
 
     service = ConsentDBService()
-    pending_request = await service.get_pending_by_request_id(payload.userId, payload.requestId)
+    owned_identifiers = await _owned_consent_identifiers(payload.userId)
+    pending_request = await service.get_pending_by_request_id(
+        payload.userId,
+        payload.requestId,
+        **_identifier_filter_kwargs(payload.userId, owned_identifiers),
+    )
     if not pending_request:
         raise HTTPException(status_code=404, detail="Consent request not found")
+    subject_user_id = (
+        str(pending_request.get("user_id") or payload.userId).strip() or payload.userId
+    )
 
     await service.insert_event(
-        user_id=payload.userId,
+        user_id=subject_user_id,
         agent_id=pending_request["developer"],
         scope=pending_request["scope"],
         action="CANCELLED",
@@ -1085,7 +1220,11 @@ async def revoke_consent(
 
         # Get the active token for this scope from the correct ledger.
         service = ConsentDBService()
-        active_tokens = await service.get_active_tokens(userId)
+        owned_identifiers = await _owned_consent_identifiers(userId)
+        active_tokens = await service.get_active_tokens(
+            userId,
+            **_identifier_filter_kwargs(userId, owned_identifiers),
+        )
         internal_tokens = await service.get_active_internal_tokens(userId)
         all_active_tokens = [*internal_tokens, *active_tokens]
         logger.info("consent.revoke_active_token_count=%s", len(all_active_tokens))
@@ -1125,8 +1264,9 @@ async def revoke_consent(
         logger.info("consent.revoke_persist_event")
 
         # Log REVOKED event to database (link to original request_id for trail)
+        subject_user_id = str(token_to_revoke.get("user_id") or userId).strip() or userId
         await service.insert_event(
-            user_id=userId,
+            user_id=subject_user_id,
             agent_id=agent_id,
             scope=scope,
             action="REVOKED",
