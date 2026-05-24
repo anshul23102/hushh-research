@@ -12,6 +12,8 @@ Authentication:
 - All endpoints require VAULT_OWNER token (consent-first architecture)
 - Token contains user_id, proving both identity and consent
 - Firebase is only used for bootstrap (issuing VAULT_OWNER token)
+
+Canonical attach points: api.routes.kai.chat.analyze_portfolio_loser -> POST /chat/analyze-loser
 """
 
 import logging
@@ -376,6 +378,6 @@ async def analyze_portfolio_loser(
             saved_to_pkm=result.get("saved_to_pkm", False),
         )
 
-    except Exception:
-        logger.error("kai.chat.analyze_loser.error ticker=%s", ticker, exc_info=True)
-        raise HTTPException(status_code=500, detail="Analysis failed")
+    except Exception as e:
+        logger.error("chat.analyze_loser.error ticker=%s: %s", ticker, e)
+        raise HTTPException(status_code=500, detail="Loser analysis failed")
