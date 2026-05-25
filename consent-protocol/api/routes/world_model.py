@@ -155,9 +155,9 @@ async def get_world_model_data(
 
 @router.get("/domain-data/{user_id}/{domain}", response_model=DomainDataResponse)
 async def get_world_model_domain_data(
-    user_id: str = Path(..., min_length=1, max_length=128),
-    domain: str = Path(..., min_length=1, max_length=200),
-    segment_ids: list[str] | None = Query(default=None),
+    user_id: str,
+    domain: str,
+    segment_ids: list[str] | None = Query(default=None, max_length=100),
     token_data: dict = Depends(require_vault_owner_token),
 ):
     return await _get_domain_data(user_id, domain, segment_ids, token_data)

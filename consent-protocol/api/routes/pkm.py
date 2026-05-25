@@ -168,9 +168,9 @@ async def get_encrypted_data(
 
 @router.get("/domain-data/{user_id}/{domain}", response_model=DomainDataResponse)
 async def get_domain_data(
-    user_id: str = Path(..., max_length=128),
-    domain: str = Path(..., max_length=64),
-    segment_ids: list[str] | None = Depends(_validated_segment_ids),
+    user_id: str,
+    domain: str,
+    segment_ids: list[str] | None = Query(default=None, max_length=100),
     token_data: dict = Depends(require_vault_owner_token),
 ):
     return await _get_domain_data(user_id, domain, segment_ids, token_data)
