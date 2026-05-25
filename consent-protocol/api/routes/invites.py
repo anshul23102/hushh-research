@@ -14,6 +14,9 @@ from hushh_mcp.services.ria_iam_service import (
 
 router = APIRouter(prefix="/api/invites", tags=["RIA Invites"])
 
+_UserId = Annotated[str, Path(min_length=1, max_length=128)]
+
+
 
 def _iam_schema_not_ready_response() -> JSONResponse:
     return JSONResponse(
