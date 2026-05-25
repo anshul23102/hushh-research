@@ -13,7 +13,7 @@ This ensures consistent consent-first architecture throughout the system.
 import logging
 import re
 import time
-from typing import Any, Dict
+from typing import Annotated, Any, Dict
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
@@ -37,6 +37,9 @@ from hushh_mcp.services.ria_iam_service import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/consent", tags=["Consent Management"])
+
+_UserId = Annotated[str, Path(min_length=1, max_length=128)]
+
 
 # NOTE: Export data is now persisted to database via ConsentDBService.store_consent_export()
 # The in-memory dict is kept as a fast cache but database is the source of truth
@@ -68,7 +71,7 @@ async def _owned_consent_identifiers(user_id: str) -> list[str]:
     return identifiers or [user_id]
 
 
-def _identifier_filter_kwargs(user_id: str, identifiers: list[str]) -> dict[str, list[str]]:
+def _identifier_filter_kwargs(user_id: _UserId, identifiers: list[str]) -> dict[str, list[str]]:
     normalized_user_id = str(user_id or "").strip()
     normalized_identifiers = [
         str(item or "").strip() for item in identifiers if str(item or "").strip()
