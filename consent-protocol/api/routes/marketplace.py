@@ -1,8 +1,10 @@
-"""Marketplace discovery routes for RIA and investor ecosystems."""
+"""Marketplace discovery routes for RIA and investor ecosystems with bounded path parameters (CWE-400)."""
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, HTTPException, Path, Query
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
@@ -14,6 +16,8 @@ from hushh_mcp.services.ria_iam_service import (
 )
 
 router = APIRouter(prefix="/api/marketplace", tags=["Marketplace"])
+
+_RiaId = Annotated[str, Path(min_length=1, max_length=128)]
 
 
 class MarketplaceInvestorActionRequest(BaseModel):
@@ -146,7 +150,7 @@ async def record_marketplace_investor_action(
 
 
 @router.get("/ria/{ria_id}")
-async def get_marketplace_ria(ria_id: str):
+async def get_marketplace_ria(ria_id: _RiaId):
     service = RIAIAMService()
     try:
         profile = await service.get_marketplace_ria_profile(ria_id)
