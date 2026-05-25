@@ -1,11 +1,11 @@
-"""Kai Gmail receipts connector routes."""
+"""Kai Gmail receipts connector routes with bounded path parameters (CWE-400)."""
 
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request, status
 from pydantic import BaseModel, Field
 from sqlalchemy.exc import OperationalError as SqlalchemyOperationalError
 
@@ -16,6 +16,10 @@ from hushh_mcp.services.receipt_memory_service import get_receipt_memory_preview
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["Kai Gmail"])
+
+_UserId = Annotated[str, Path(min_length=1, max_length=128)]
+_RunId = Annotated[str, Path(min_length=1, max_length=128)]
+_ArtifactId = Annotated[str, Path(min_length=1, max_length=128)]
 
 
 class GmailConnectStartRequest(BaseModel):
@@ -185,7 +189,7 @@ async def gmail_connect_complete(
 
 @router.get("/gmail/status/{user_id}")
 async def gmail_status(
-    user_id: str,
+    user_id: _UserId,
     firebase_uid: str = Depends(require_firebase_auth),
 ):
     verify_user_id_match(firebase_uid, user_id)
@@ -244,7 +248,7 @@ async def gmail_reconcile(
 
 @router.get("/gmail/sync/{run_id}")
 async def gmail_sync_run(
-    run_id: str,
+    run_id: _RunId,
     user_id: str = Query(..., min_length=1),
     firebase_uid: str = Depends(require_firebase_auth),
 ):
@@ -270,7 +274,7 @@ async def gmail_sync_run(
 
 @router.get("/gmail/receipts/{user_id}")
 async def gmail_receipts(
-    user_id: str,
+    user_id: _UserId,
     page: int = Query(1, ge=1),
     per_page: int = Query(25, ge=1, le=100),
     firebase_uid: str = Depends(require_firebase_auth),
@@ -319,7 +323,7 @@ async def gmail_receipts_memory_preview(
 
 @router.get("/gmail/receipts-memory/artifacts/{artifact_id}")
 async def gmail_receipts_memory_artifact(
-    artifact_id: str,
+    artifact_id: _ArtifactId,
     user_id: str = Query(..., min_length=1),
     firebase_uid: str = Depends(require_firebase_auth),
     token_data: dict = Depends(require_vault_owner_token),
