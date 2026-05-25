@@ -1,12 +1,21 @@
-"""Kai Plaid portfolio source routes."""
+"""Kai Plaid routes with bounded path parameters (CWE-400) portfolio source routes."""
 
 from __future__ import annotations
 
 import json
 import logging
-from typing import Any, Literal, Optional
+from typing import Annotated, Any, Literal, Optional
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Request, status
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    Header,
+    HTTPException,
+    Path,
+    Request,
+    status,
+)
 from pydantic import BaseModel, Field
 
 from api.middleware import require_consent_scope, require_firebase_auth, require_vault_owner_token
@@ -24,6 +33,10 @@ from hushh_mcp.services.plaid_portfolio_service import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["Kai Plaid"])
+
+_UserId = Annotated[str, Path(min_length=1, max_length=128)]
+_IntentId = Annotated[str, Path(min_length=1, max_length=128)]
+_TransferId = Annotated[str, Path(min_length=1, max_length=128)]
 require_transfer_scope_token = require_consent_scope("brokerage.transfer.write")
 
 
@@ -171,7 +184,7 @@ async def _resolve_plaid_connection_user(
     return str(token_data["user_id"])
 
 
-def _verify_resolved_user(resolved_user_id: str, requested_user_id: str) -> None:
+def _verify_resolved_user(resolved_user_id: _UserId, requested_user_id: str) -> None:
     if resolved_user_id != requested_user_id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -234,7 +247,7 @@ def _to_http_exception(error: Exception) -> HTTPException:
 
 def _raise_logged_http_exception(
     route_name: str,
-    user_id: str,
+    user_id: _UserId,
     error: Exception,
 ) -> None:
     http_exc = _to_http_exception(error)
@@ -253,7 +266,7 @@ def _raise_logged_http_exception(
 
 @router.get("/plaid/status/{user_id}")
 async def get_plaid_status(
-    user_id: str,
+    user_id: _UserId,
     token_data: dict = Depends(require_vault_owner_token),
 ):
     _verify_user(token_data, user_id)
@@ -375,7 +388,7 @@ async def exchange_plaid_funding_public_token(
 
 @router.get("/plaid/funding/status/{user_id}")
 async def get_plaid_funding_status(
-    user_id: str,
+    user_id: _UserId,
     token_data: dict = Depends(require_transfer_scope_token),
 ):
     _verify_user(token_data, user_id)
@@ -529,7 +542,7 @@ async def create_plaid_funded_trade(
 
 @router.get("/plaid/trades/funded")
 async def list_plaid_funded_trades(
-    user_id: str,
+    user_id: _UserId,
     limit: int = 20,
     token_data: dict = Depends(require_transfer_scope_token),
 ):
@@ -545,8 +558,8 @@ async def list_plaid_funded_trades(
 
 @router.get("/plaid/trades/funded/{intent_id}")
 async def get_plaid_funded_trade(
-    intent_id: str,
-    user_id: str,
+    intent_id: _IntentId,
+    user_id: _UserId,
     token_data: dict = Depends(require_transfer_scope_token),
 ):
     _verify_user(token_data, user_id)
@@ -561,7 +574,7 @@ async def get_plaid_funded_trade(
 
 @router.post("/plaid/trades/funded/{intent_id}/refresh")
 async def refresh_plaid_funded_trade(
-    intent_id: str,
+    intent_id: _IntentId,
     request: PlaidFundedTradeRefreshRequest,
     token_data: dict = Depends(require_transfer_scope_token),
 ):
@@ -581,8 +594,8 @@ async def refresh_plaid_funded_trade(
 
 @router.get("/plaid/transfers/{transfer_id}")
 async def get_plaid_transfer(
-    transfer_id: str,
-    user_id: str,
+    transfer_id: _TransferId,
+    user_id: _UserId,
     token_data: dict = Depends(require_transfer_scope_token),
 ):
     _verify_user(token_data, user_id)
@@ -597,7 +610,7 @@ async def get_plaid_transfer(
 
 @router.post("/plaid/transfers/{transfer_id}/cancel")
 async def cancel_plaid_transfer(
-    transfer_id: str,
+    transfer_id: _TransferId,
     request: PlaidRefreshCancelRequest,
     token_data: dict = Depends(require_transfer_scope_token),
 ):
@@ -634,7 +647,7 @@ async def search_plaid_funding_records(
 
 @router.post("/plaid/funding/admin/transfers/{transfer_id}/refresh")
 async def refresh_plaid_transfer_status(
-    transfer_id: str,
+    transfer_id: _TransferId,
     request: PlaidRefreshCancelRequest,
     token_data: dict = Depends(require_transfer_scope_token),
 ):
@@ -760,7 +773,7 @@ async def remove_plaid_item(
 @router.get("/plaid/refresh/{run_id}")
 async def get_plaid_refresh_run(
     run_id: str,
-    user_id: str,
+    user_id: _UserId,
     token_data: dict = Depends(require_vault_owner_token),
 ):
     _verify_user(token_data, user_id)
