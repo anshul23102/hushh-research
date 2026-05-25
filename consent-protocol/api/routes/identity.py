@@ -9,6 +9,9 @@ from fastapi import APIRouter, HTTPException
 
 router = APIRouter(prefix="/api/identity", tags=["Identity Resolution"])
 
+_UserId = Annotated[str, Path(min_length=1, max_length=128)]
+
+
 _DEPRECATION_DETAIL = {
     "error_code": "IDENTITY_ROUTES_DEPRECATED",
     "message": "Identity routes are deprecated and disabled in this release.",
