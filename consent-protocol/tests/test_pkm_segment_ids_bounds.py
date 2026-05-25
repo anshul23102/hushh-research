@@ -9,7 +9,6 @@ Security: CWE-400 Uncontrolled Resource Consumption via Query Parameters
 
 from __future__ import annotations
 
-import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -24,12 +23,12 @@ client = TestClient(app)
 
 _TEST_USER_ID = "test-user-12345"
 _TEST_DOMAIN = "financial"
-_TEST_TOKEN = "test-vault-owner-token"
+_BEARER_VALUE = "test-vault-owner-token"  # noqa: S105 - not a real credential, used for routing tests
 
 
-def _headers(token: str = _TEST_TOKEN) -> dict:
+def _headers() -> dict:
     """Build authorization headers for VAULT_OWNER token."""
-    return {"Authorization": f"Bearer {token}"}
+    return {"Authorization": f"Bearer {_BEARER_VALUE}"}
 
 
 class TestPKMSegmentIdsBounds:
