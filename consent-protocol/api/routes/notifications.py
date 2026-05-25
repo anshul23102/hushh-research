@@ -87,7 +87,7 @@ async def register_push_token(
 
 @router.delete("/unregister")
 async def unregister_push_token(
-    body: UnregisterPushTokenRequest = None,
+    body: UnregisterPushTokenRequest | None = None,
     firebase_uid: str = Depends(require_firebase_auth),
 ):
     """
