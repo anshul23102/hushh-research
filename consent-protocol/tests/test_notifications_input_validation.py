@@ -19,10 +19,10 @@ import pytest
 from pydantic import ValidationError
 
 from api.routes.notifications import (
-    RegisterPushTokenRequest,
-    UnregisterPushTokenRequest,
     _MAX_PUSH_TOKEN_LENGTH,
     _MAX_USER_ID_LENGTH,
+    RegisterPushTokenRequest,
+    UnregisterPushTokenRequest,
 )
 
 
