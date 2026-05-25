@@ -5,7 +5,7 @@ from __future__ import annotations
 import hmac
 import logging
 import os
-from typing import Any
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field
@@ -19,6 +19,9 @@ from hushh_mcp.services.one_email_kyc_service import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/one", tags=["One Email KYC"])
+
+_UserId = Annotated[str, Path(min_length=1, max_length=128)]
+
 
 
 class WorkflowUserRequest(BaseModel):
@@ -241,7 +244,7 @@ async def one_email_sync_recent(
 
 @router.get("/kyc/workflows")
 async def one_kyc_list_workflows(
-    user_id: str,
+    user_id: _UserId,
     limit: int = Query(default=25, ge=1, le=100),
     cursor: str | None = Query(default=None, max_length=500),
     status_filter: str | None = Query(default=None, alias="status", max_length=64),
@@ -265,7 +268,7 @@ async def one_kyc_list_workflows(
 @router.get("/kyc/workflows/{workflow_id}")
 async def one_kyc_get_workflow(
     workflow_id: str,
-    user_id: str,
+    user_id: _UserId,
     token_data: dict = Depends(require_vault_owner_token),
 ):
     _verified_vault_user_id(token_data, user_id)
@@ -279,7 +282,7 @@ async def one_kyc_get_workflow(
 @router.delete("/kyc/workflows/{workflow_id}")
 async def one_kyc_archive_workflow(
     workflow_id: str,
-    user_id: str,
+    user_id: _UserId,
     token_data: dict = Depends(require_vault_owner_token),
 ):
     _verified_vault_user_id(token_data, user_id)
@@ -354,7 +357,7 @@ async def one_kyc_approve_draft(
 
 @router.get("/kyc/client-connector")
 async def one_kyc_get_client_connector(
-    user_id: str,
+    user_id: _UserId,
     token_data: dict = Depends(require_vault_owner_token),
 ):
     _verified_vault_user_id(token_data, user_id)
@@ -414,7 +417,7 @@ async def one_kyc_send_approved_reply(
 @router.get("/kyc/workflows/{workflow_id}/consent-export")
 async def one_kyc_get_workflow_consent_export(
     workflow_id: str,
-    user_id: str,
+    user_id: _UserId,
     token_data: dict = Depends(require_vault_owner_token),
 ):
     _verified_vault_user_id(token_data, user_id)
@@ -435,7 +438,7 @@ async def one_kyc_get_workflow_consent_export(
 @router.get("/kyc/workflows/{workflow_id}/consent-exports")
 async def one_kyc_get_workflow_consent_exports(
     workflow_id: str,
-    user_id: str,
+    user_id: _UserId,
     token_data: dict = Depends(require_vault_owner_token),
 ):
     _verified_vault_user_id(token_data, user_id)
