@@ -419,7 +419,7 @@ def test_ria_invites_create(monkeypatch):
 
 
 def test_public_invite_lookup(monkeypatch):
-    async def _mock_get(self, invite_token: str):
+    async def _mock_get(self, invite_token: str, include_target_pii: bool = False):
         assert invite_token == TEST_INVITE_VALUE
         return {
             "invite_token": invite_token,
