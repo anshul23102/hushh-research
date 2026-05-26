@@ -22,7 +22,6 @@ import pytest
 
 from api.routes.investors import bulk_create_investors, create_investor
 
-
 # ---------------------------------------------------------------------------
 # Structural tests: verify the dependency is wired at the function level
 # ---------------------------------------------------------------------------
