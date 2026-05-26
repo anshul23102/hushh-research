@@ -238,7 +238,13 @@ class SummaryReducerAgent:
         projection = agent.reduce(domain="finance", candidate_data={...})
     """
 
-    def reduce(self, domain: str, candidate_data: dict[str, Any]) -> SummaryProjection:
+    def reduce(
+        self,
+        domain: str,
+        candidate_data: dict[str, Any],
+        *,
+        run_llm: bool = True,
+    ) -> SummaryProjection:
         """
         Produce a discovery-safe summary projection from raw PKM data.
 
@@ -247,8 +253,13 @@ class SummaryReducerAgent:
           2. Build presence/count/freshness from the scrubbed data (deterministic)
           3. Post-process: scan output for leaks and sanitise
           4. Validate with Pydantic before returning
+
+        When run_llm=False the method skips any future LLM integration and
+        returns only the deterministic layers (steps 1-2-4).  This is
+        suitable for unit tests and for callers that need zero-latency
+        sanitisation without a model call.
         """
-        logger.info("summary_reducer.reduce domain=%s", domain)
+        logger.info("summary_reducer.reduce domain=%s run_llm=%s", domain, run_llm)
 
         scrubbed = _pre_process_data(candidate_data)
         raw_projection = self._build_projection(domain, scrubbed)

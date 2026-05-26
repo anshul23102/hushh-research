@@ -4263,7 +4263,7 @@ class PKMAgentLabService:
         # simulated_state dict reaches any LLM prompt.  SummaryReducerAgent runs
         # only the deterministic layers (no LLM call), so this is zero-latency.
         if simulated_state is not None:
-            simulated_state = SummaryReducerAgent().reduce(simulated_state, run_llm=False).model_dump()
+            simulated_state = SummaryReducerAgent().reduce("simulated_state", simulated_state, run_llm=False).model_dump()
 
         total_started_at = time.perf_counter()
         normalized_domains = [
