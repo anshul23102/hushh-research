@@ -31,13 +31,13 @@ from api.routes.ria import (
 
 
 def test_submit_display_name_at_max_accepted():
-    req = RIAOnboardingSubmitRequest(display_name="A" * 256)
-    assert len(req.display_name) == 256
+    req = RIAOnboardingSubmitRequest(display_name="A" * 200)
+    assert len(req.display_name) == 200
 
 
 def test_submit_display_name_over_max_rejected():
     with pytest.raises(ValidationError):
-        RIAOnboardingSubmitRequest(display_name="A" * 257)
+        RIAOnboardingSubmitRequest(display_name="A" * 201)
 
 
 def test_submit_display_name_empty_rejected():
@@ -51,13 +51,13 @@ def test_submit_display_name_empty_rejected():
 
 
 def test_submit_individual_legal_name_at_max_accepted():
-    req = RIAOnboardingSubmitRequest(display_name="Jane Doe", individual_legal_name="N" * 256)
-    assert len(req.individual_legal_name) == 256
+    req = RIAOnboardingSubmitRequest(display_name="Jane Doe", individual_legal_name="N" * 200)
+    assert len(req.individual_legal_name) == 200
 
 
 def test_submit_individual_legal_name_over_max_rejected():
     with pytest.raises(ValidationError):
-        RIAOnboardingSubmitRequest(display_name="Jane Doe", individual_legal_name="N" * 257)
+        RIAOnboardingSubmitRequest(display_name="Jane Doe", individual_legal_name="N" * 201)
 
 
 # ---------------------------------------------------------------------------
@@ -66,13 +66,13 @@ def test_submit_individual_legal_name_over_max_rejected():
 
 
 def test_submit_finra_crd_at_max_accepted():
-    req = RIAOnboardingSubmitRequest(display_name="Jane Doe", finra_crd="1" * 50)
-    assert len(req.finra_crd) == 50
+    req = RIAOnboardingSubmitRequest(display_name="Jane Doe", finra_crd="1" * 10)
+    assert len(req.finra_crd) == 10
 
 
 def test_submit_finra_crd_over_max_rejected():
     with pytest.raises(ValidationError):
-        RIAOnboardingSubmitRequest(display_name="Jane Doe", finra_crd="1" * 51)
+        RIAOnboardingSubmitRequest(display_name="Jane Doe", finra_crd="1" * 11)
 
 
 # ---------------------------------------------------------------------------
@@ -144,23 +144,23 @@ def test_submit_disclosures_url_dangerous_scheme_rejected(bad_url):
 
 
 def test_verify_name_query_at_max_accepted():
-    req = RIAOnboardingVerifyNameRequest(query="q" * 256)
-    assert len(req.query) == 256
+    req = RIAOnboardingVerifyNameRequest(query="q" * 200)
+    assert len(req.query) == 200
 
 
 def test_verify_name_query_over_max_rejected():
     with pytest.raises(ValidationError):
-        RIAOnboardingVerifyNameRequest(query="q" * 257)
+        RIAOnboardingVerifyNameRequest(query="q" * 201)
 
 
 def test_verify_name_crd_at_max_accepted():
-    req = RIAOnboardingVerifyNameRequest(query="Jane Doe", crd_number="1" * 50)
-    assert len(req.crd_number) == 50
+    req = RIAOnboardingVerifyNameRequest(query="Jane Doe", crd_number="1" * 10)
+    assert len(req.crd_number) == 10
 
 
 def test_verify_name_crd_over_max_rejected():
     with pytest.raises(ValidationError):
-        RIAOnboardingVerifyNameRequest(query="Jane Doe", crd_number="1" * 51)
+        RIAOnboardingVerifyNameRequest(query="Jane Doe", crd_number="1" * 11)
 
 
 # ---------------------------------------------------------------------------
@@ -170,26 +170,26 @@ def test_verify_name_crd_over_max_rejected():
 
 @pytest.mark.parametrize("model_cls", [RIAOnboardingVerifyLicenseRequest, RIAProfileRefreshLicenseRequest])
 def test_license_number_at_max_accepted(model_cls):
-    req = model_cls(license_number="L" * 128)
-    assert len(req.license_number) == 128
+    req = model_cls(license_number="L" * 50)
+    assert len(req.license_number) == 50
 
 
 @pytest.mark.parametrize("model_cls", [RIAOnboardingVerifyLicenseRequest, RIAProfileRefreshLicenseRequest])
 def test_license_number_over_max_rejected(model_cls):
     with pytest.raises(ValidationError):
-        model_cls(license_number="L" * 129)
+        model_cls(license_number="L" * 51)
 
 
 @pytest.mark.parametrize("model_cls", [RIAOnboardingVerifyLicenseRequest, RIAProfileRefreshLicenseRequest])
 def test_regulator_at_max_accepted(model_cls):
-    req = model_cls(license_number="LIC123", regulator="R" * 128)
-    assert len(req.regulator) == 128
+    req = model_cls(license_number="LIC123", regulator="R" * 100)
+    assert len(req.regulator) == 100
 
 
 @pytest.mark.parametrize("model_cls", [RIAOnboardingVerifyLicenseRequest, RIAProfileRefreshLicenseRequest])
 def test_regulator_over_max_rejected(model_cls):
     with pytest.raises(ValidationError):
-        model_cls(license_number="LIC123", regulator="R" * 129)
+        model_cls(license_number="LIC123", regulator="R" * 101)
 
 
 # ---------------------------------------------------------------------------
@@ -211,15 +211,15 @@ def test_consent_request_subject_user_id_over_max_rejected():
 
 def test_consent_request_reason_at_max_accepted():
     req = RIAConsentRequestCreate(
-        subject_user_id="uid", scope_template_id="t", reason="r" * 1000
+        subject_user_id="uid", scope_template_id="t", reason="r" * 500
     )
-    assert len(req.reason) == 1000
+    assert len(req.reason) == 500
 
 
 def test_consent_request_reason_over_max_rejected():
     with pytest.raises(ValidationError):
         RIAConsentRequestCreate(
-            subject_user_id="uid", scope_template_id="t", reason="r" * 1001
+            subject_user_id="uid", scope_template_id="t", reason="r" * 501
         )
 
 
