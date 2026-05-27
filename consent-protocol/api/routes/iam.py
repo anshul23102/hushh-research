@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
@@ -13,6 +15,7 @@ from hushh_mcp.services.ria_iam_service import (
     RIAIAMService,
 )
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/iam", tags=["IAM"])
 
 
@@ -58,7 +61,8 @@ async def switch_persona(
     service = RIAIAMService()
     try:
         return await service.switch_persona(firebase_uid, payload.persona)
-    except IAMSchemaNotReadyError:
+    except IAMSchemaNotReadyError as exc:
+        logger.warning("iam.switch_persona.schema_not_ready user_id=%s: %s", firebase_uid, exc)
         return _iam_schema_not_ready_response()
     except RIAIAMPolicyError as exc:
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
@@ -72,5 +76,6 @@ async def update_marketplace_opt_in(
     service = RIAIAMService()
     try:
         return await service.set_marketplace_opt_in(firebase_uid, payload.enabled)
-    except IAMSchemaNotReadyError:
+    except IAMSchemaNotReadyError as exc:
+        logger.warning("iam.marketplace_opt_in.schema_not_ready user_id=%s: %s", firebase_uid, exc)
         return _iam_schema_not_ready_response()

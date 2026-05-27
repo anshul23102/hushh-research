@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, Path
 from fastapi.responses import JSONResponse
 
@@ -12,6 +14,7 @@ from hushh_mcp.services.ria_iam_service import (
     RIAIAMService,
 )
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/invites", tags=["RIA Invites"])
 
 
@@ -30,7 +33,8 @@ async def get_invite(invite_token: str = Path(..., max_length=512)):
     service = RIAIAMService()
     try:
         return await service.get_ria_invite(invite_token)
-    except IAMSchemaNotReadyError:
+    except IAMSchemaNotReadyError as exc:
+        logger.warning("invites.get_invite.schema_not_ready token=%.16s: %s", invite_token, exc)
         return _iam_schema_not_ready_response()
     except RIAIAMPolicyError as exc:
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
@@ -44,7 +48,8 @@ async def accept_invite(
     service = RIAIAMService()
     try:
         return await service.accept_ria_invite(invite_token, firebase_uid)
-    except IAMSchemaNotReadyError:
+    except IAMSchemaNotReadyError as exc:
+        logger.warning("invites.accept_invite.schema_not_ready user_id=%s: %s", firebase_uid, exc)
         return _iam_schema_not_ready_response()
     except RIAIAMPolicyError as exc:
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
