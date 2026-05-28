@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, Path
 from fastapi.responses import JSONResponse
 
@@ -13,15 +15,15 @@ from hushh_mcp.services.ria_iam_service import (
 )
 
 router = APIRouter(prefix="/api/invites", tags=["RIA Invites"])
+logger = logging.getLogger(__name__)
 
 
-def _iam_schema_not_ready_response(message: str | None = None) -> JSONResponse:
+def _iam_schema_not_ready_response() -> JSONResponse:
     return JSONResponse(
         status_code=503,
         content={
-            "error": message or "IAM schema is not ready",
+            "error": "IAM service is temporarily unavailable.",
             "code": "IAM_SCHEMA_NOT_READY",
-            "hint": "Run `python db/migrate.py --iam` and `python db/verify/verify_iam_schema.py`.",
         },
     )
 
@@ -32,7 +34,8 @@ async def get_invite(invite_token: str = Path(..., max_length=512)):
     try:
         return await service.get_ria_invite(invite_token)
     except IAMSchemaNotReadyError as exc:
-        return _iam_schema_not_ready_response(str(exc))
+        logger.warning("invites.get_invite.schema_not_ready", exc_info=True)
+        return _iam_schema_not_ready_response()
     except RIAIAMPolicyError as exc:
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
 
@@ -46,6 +49,7 @@ async def accept_invite(
     try:
         return await service.accept_ria_invite(invite_token, firebase_uid)
     except IAMSchemaNotReadyError as exc:
-        return _iam_schema_not_ready_response(str(exc))
+        logger.warning("invites.accept_invite.schema_not_ready firebase_uid=%s", firebase_uid, exc_info=True)
+        return _iam_schema_not_ready_response()
     except RIAIAMPolicyError as exc:
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
