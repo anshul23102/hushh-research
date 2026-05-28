@@ -292,9 +292,10 @@ def validate_token(
         return True, None, token
 
     except (ValueError, UnicodeDecodeError, binascii.Error) as e:
-        return False, f"Malformed token: {str(e)}", None
+        logger.debug("consent.token.malformed: %s", e)
+        return False, "Malformed token", None
     except Exception as e:
-        logger.error(f"Unexpected error during token validation: {e}", exc_info=True)
+        logger.error("Unexpected error during token validation: %s", e, exc_info=True)
         raise
 
 
@@ -341,7 +342,7 @@ async def validate_token_with_db(
 
                 # Add to in-memory set for future fast checks
                 _revoked_tokens.add(token_str)
-                logger.warning(f"Token revoked in DB but not in memory: {token_str[:30]}...")
+                logger.warning("Token revoked in DB but not in memory: %.30s...", token_str)
                 return False, "Token has been revoked (DB check)", None
     except Exception as e:
         # DB is unreachable — apply fail-closed policy based on token scope.
