@@ -271,7 +271,7 @@ async def gmail_sync_run(
 @router.get("/gmail/receipts/{user_id}")
 async def gmail_receipts(
     user_id: str,
-    page: int = Query(1, ge=1),
+    page: int = Query(1, ge=1, le=1_000),
     per_page: int = Query(25, ge=1, le=100),
     firebase_uid: str = Depends(require_firebase_auth),
     token_data: dict = Depends(require_vault_owner_token),

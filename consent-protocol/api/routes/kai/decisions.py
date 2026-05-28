@@ -38,8 +38,8 @@ class DecisionHistoryResponse(BaseModel):
 @router.get("/decisions/{user_id}", response_model=DecisionHistoryResponse)
 async def get_decision_history(
     user_id: str,
-    limit: int = Query(default=50, le=100),
-    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=50, ge=1, le=100),
+    offset: int = Query(default=0, ge=0, le=10_000),
     token_data: dict = Depends(require_vault_owner_token),
 ):
     """
