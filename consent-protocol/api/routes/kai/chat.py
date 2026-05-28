@@ -39,7 +39,7 @@ def _redact_uid(uid: str | None) -> str:
 class KaiChatRequest(BaseModel):
     """Request body for Kai chat endpoint."""
 
-    user_id: str = Field(..., description="User's Firebase UID")
+    user_id: str = Field(..., description="User's Firebase UID", min_length=1, max_length=128)
     message: str = Field(..., description="User's message to Kai", min_length=1, max_length=4000)
     conversation_id: Optional[str] = Field(None, description="Existing conversation ID to continue")
 
@@ -274,7 +274,7 @@ async def get_initial_chat_state(
 class AnalyzeLoserRequest(BaseModel):
     """Request body for analyze-loser endpoint."""
 
-    user_id: str = Field(..., description="User's Firebase UID")
+    user_id: str = Field(..., description="User's Firebase UID", min_length=1, max_length=128)
     symbol: str = Field(
         ..., description="Stock ticker symbol to analyze", min_length=1, max_length=10
     )
