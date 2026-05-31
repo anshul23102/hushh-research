@@ -19,12 +19,22 @@ logger = logging.getLogger(__name__)
 
 _IDENTITY_STALE_AFTER = timedelta(hours=24)
 _IDENTITY_SYNC_COOLDOWN = timedelta(minutes=5)
-_IDENTITY_SYNC_COOLDOWN_MAX: int = max(
-    1,
-    int(os.getenv("ACTOR_IDENTITY_SYNC_COOLDOWN_MAX", "5000") or "5000"),
-)
 _ALIAS_CODE_PATTERN = re.compile(r"\s+")
 _IDENTITY_SYNC_LOCK = threading.Lock()
+
+
+def _positive_int_env(name: str, default: int) -> int:
+    raw_value = str(os.getenv(name) or "").strip()
+    if not raw_value:
+        return default
+    try:
+        return max(1, int(raw_value))
+    except ValueError:
+        logger.warning("actor_identity.invalid_positive_int_env name=%s", name)
+        return default
+
+
+_IDENTITY_SYNC_COOLDOWN_MAX = _positive_int_env("ACTOR_IDENTITY_SYNC_COOLDOWN_MAX", 5000)
 
 
 class _IdentitySyncCooldownStore:

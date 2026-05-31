@@ -29,6 +29,7 @@ from hushh_mcp.services.actor_identity_service import (
     _IDENTITY_SYNC_COOLDOWN_UNTIL,
     ActorIdentityService,
     _IdentitySyncCooldownStore,
+    _positive_int_env,
 )
 
 
@@ -70,6 +71,10 @@ class TestConstruction:
 
     def test_initial_length_is_zero(self):
         assert len(_IdentitySyncCooldownStore()) == 0
+
+    def test_invalid_capacity_env_uses_default(self, monkeypatch: pytest.MonkeyPatch):
+        monkeypatch.setenv("ACTOR_IDENTITY_SYNC_COOLDOWN_MAX", "not-an-int")
+        assert _positive_int_env("ACTOR_IDENTITY_SYNC_COOLDOWN_MAX", 5000) == 5000
 
 
 # ===========================================================================
