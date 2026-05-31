@@ -37,51 +37,51 @@ async def _require_ria_verified(
 
 
 class RIAOnboardingSubmitRequest(BaseModel):
-    display_name: str = Field(..., min_length=1)
+    display_name: str = Field(..., min_length=1, max_length=200)
     requested_capabilities: list[str] = Field(default_factory=lambda: ["advisory"])
-    individual_legal_name: str | None = None
-    individual_crd: str | None = None
-    advisory_firm_legal_name: str | None = None
-    advisory_firm_iapd_number: str | None = None
-    broker_firm_legal_name: str | None = None
-    broker_firm_crd: str | None = None
-    legal_name: str | None = None
-    finra_crd: str | None = None
-    sec_iard: str | None = None
-    bio: str | None = None
-    strategy: str | None = None
-    disclosures_url: str | None = None
-    primary_firm_name: str | None = None
-    primary_firm_role: str | None = None
+    individual_legal_name: str | None = Field(None, max_length=200)
+    individual_crd: str | None = Field(None, max_length=20)
+    advisory_firm_legal_name: str | None = Field(None, max_length=200)
+    advisory_firm_iapd_number: str | None = Field(None, max_length=20)
+    broker_firm_legal_name: str | None = Field(None, max_length=200)
+    broker_firm_crd: str | None = Field(None, max_length=20)
+    legal_name: str | None = Field(None, max_length=200)
+    finra_crd: str | None = Field(None, max_length=20)
+    sec_iard: str | None = Field(None, max_length=20)
+    bio: str | None = Field(None, max_length=5000)
+    strategy: str | None = Field(None, max_length=5000)
+    disclosures_url: str | None = Field(None, max_length=500)
+    primary_firm_name: str | None = Field(None, max_length=200)
+    primary_firm_role: str | None = Field(None, max_length=100)
     force_live_verification: bool = False
     # Onboarding v2: license-first fields
-    license_number: str | None = None
-    regulator: str | None = None
-    onboarding_type: str = "individual"
+    license_number: str | None = Field(None, max_length=50)
+    regulator: str | None = Field(None, max_length=50)
+    onboarding_type: str = Field(default="individual", max_length=50)
     services_offered: list[str] = Field(default_factory=list)
     fee_structure: list[str] = Field(default_factory=list)
     min_engagement_amount: float | None = None
-    min_engagement_currency: str = "USD"
+    min_engagement_currency: str = Field(default="USD", max_length=3)
     certifications: list[str] = Field(default_factory=list)
-    contact_email: str | None = None
-    contact_phone: str | None = None
-    business_city: str | None = None
-    business_area: str | None = None
-    business_address: str | None = None
-    business_pin_zip: str | None = None
+    contact_email: str | None = Field(None, max_length=320)
+    contact_phone: str | None = Field(None, max_length=30)
+    business_city: str | None = Field(None, max_length=100)
+    business_area: str | None = Field(None, max_length=100)
+    business_address: str | None = Field(None, max_length=300)
+    business_pin_zip: str | None = Field(None, max_length=20)
     business_latitude: float | None = None
     business_longitude: float | None = None
 
 
 class RIAOnboardingVerifyNameRequest(BaseModel):
-    query: str = Field(..., min_length=1)
-    crd_number: str | None = None
+    query: str = Field(..., min_length=1, max_length=200)
+    crd_number: str | None = Field(None, max_length=20)
     force_live_verification: bool = False
 
 
 class RIAOnboardingVerifyLicenseRequest(BaseModel):
-    license_number: str = Field(..., min_length=1)
-    regulator: str | None = None
+    license_number: str = Field(..., min_length=1, max_length=50)
+    regulator: str | None = Field(None, max_length=50)
     force_live_verification: bool = False
 
 
@@ -92,37 +92,37 @@ class RIAProfileRefreshLicenseRequest(BaseModel):
 
 
 class RIAConsentRequestCreate(BaseModel):
-    subject_user_id: str = Field(..., min_length=1)
-    requester_actor_type: str = Field(default="ria")
-    subject_actor_type: str = Field(default="investor")
-    scope_template_id: str = Field(..., min_length=1)
-    selected_scope: str | None = None
-    duration_mode: str = Field(default="preset")
+    subject_user_id: str = Field(..., min_length=1, max_length=128)
+    requester_actor_type: str = Field(default="ria", max_length=50)
+    subject_actor_type: str = Field(default="investor", max_length=50)
+    scope_template_id: str = Field(..., min_length=1, max_length=128)
+    selected_scope: str | None = Field(None, max_length=128)
+    duration_mode: str = Field(default="preset", max_length=50)
     duration_hours: int | None = None
-    firm_id: str | None = None
-    reason: str | None = None
+    firm_id: str | None = Field(None, max_length=128)
+    reason: str | None = Field(None, max_length=1000)
 
 
 class RIAConsentBundleCreate(BaseModel):
-    subject_user_id: str = Field(..., min_length=1)
-    scope_template_id: str = Field(..., min_length=1)
+    subject_user_id: str = Field(..., min_length=1, max_length=128)
+    scope_template_id: str = Field(..., min_length=1, max_length=128)
     selected_scopes: list[str] = Field(default_factory=list)
     selected_account_ids: list[str] = Field(default_factory=list)
-    firm_id: str | None = None
-    reason: str | None = None
+    firm_id: str | None = Field(None, max_length=128)
+    reason: str | None = Field(None, max_length=1000)
 
 
 class RIAPicksParseRequest(BaseModel):
-    csv_content: str = Field(..., min_length=1)
-    source_filename: str | None = None
-    package_note: str | None = None
+    csv_content: str = Field(..., min_length=1, max_length=5_000_000)
+    source_filename: str | None = Field(None, max_length=255)
+    package_note: str | None = Field(None, max_length=1000)
     avoid_rows: list[dict] = Field(default_factory=list)
     screening_sections: list[dict] = Field(default_factory=list)
 
 
 class RIAPicksSyncRequest(BaseModel):
-    label: str | None = None
-    package_note: str | None = None
+    label: str | None = Field(None, max_length=200)
+    package_note: str | None = Field(None, max_length=1000)
     top_picks: list[dict] = Field(default_factory=list)
     avoid_rows: list[dict] = Field(default_factory=list)
     screening_sections: list[dict] = Field(default_factory=list)
@@ -132,27 +132,27 @@ class RIAPicksSyncRequest(BaseModel):
 
 
 class RIAInviteTarget(BaseModel):
-    display_name: str | None = None
-    email: str | None = None
-    phone: str | None = None
-    investor_user_id: str | None = None
-    source: str | None = None
-    delivery_channel: str | None = None
+    display_name: str | None = Field(None, max_length=200)
+    email: str | None = Field(None, max_length=320)
+    phone: str | None = Field(None, max_length=30)
+    investor_user_id: str | None = Field(None, max_length=128)
+    source: str | None = Field(None, max_length=50)
+    delivery_channel: str | None = Field(None, max_length=50)
 
 
 class RIAInviteCreateRequest(BaseModel):
-    scope_template_id: str = Field(..., min_length=1)
-    duration_mode: str = Field(default="preset")
+    scope_template_id: str = Field(..., min_length=1, max_length=128)
+    duration_mode: str = Field(default="preset", max_length=50)
     duration_hours: int | None = None
-    firm_id: str | None = None
-    reason: str | None = None
+    firm_id: str | None = Field(None, max_length=128)
+    reason: str | None = Field(None, max_length=1000)
     targets: list[RIAInviteTarget] = Field(default_factory=list)
 
 
 class RIAMarketplaceDiscoverabilityRequest(BaseModel):
     enabled: bool
-    headline: str | None = None
-    strategy_summary: str | None = None
+    headline: str | None = Field(None, max_length=200)
+    strategy_summary: str | None = Field(None, max_length=2000)
 
 
 class RIAPicksShareStateRequest(BaseModel):
@@ -194,12 +194,13 @@ class RIAClientDetailResponse(BaseModel):
     pkm_updated_at: str | None = None
 
 
-def _iam_schema_not_ready_response() -> JSONResponse:
+def _iam_schema_not_ready_response(message: str | None = None) -> JSONResponse:
     return JSONResponse(
         status_code=503,
         content={
-            "error": "RIA verification service is temporarily unavailable",
+            "error": message or "IAM schema is not ready",
             "code": "IAM_SCHEMA_NOT_READY",
+            "hint": "Run `python db/migrate.py --iam` and `python db/verify/verify_iam_schema.py`.",
         },
     )
 
@@ -243,8 +244,8 @@ async def submit_onboarding(
             business_latitude=payload.business_latitude,
             business_longitude=payload.business_longitude,
         )
-    except IAMSchemaNotReadyError:
-        return _iam_schema_not_ready_response()
+    except IAMSchemaNotReadyError as exc:
+        return _iam_schema_not_ready_response(str(exc))
     except RIAIAMPolicyError as exc:
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
 
@@ -281,8 +282,8 @@ async def verify_onboarding_license(
             regulator=payload.regulator,
             force_live_verification=payload.force_live_verification,
         )
-    except IAMSchemaNotReadyError:
-        return _iam_schema_not_ready_response()
+    except IAMSchemaNotReadyError as exc:
+        return _iam_schema_not_ready_response(str(exc))
     except RIAIAMPolicyError as exc:
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
 
@@ -292,8 +293,8 @@ async def onboarding_status(firebase_uid: str = Depends(require_firebase_auth)):
     service = RIAIAMService()
     try:
         return await service.get_ria_onboarding_status(firebase_uid)
-    except IAMSchemaNotReadyError:
-        return _iam_schema_not_ready_response()
+    except IAMSchemaNotReadyError as exc:
+        return _iam_schema_not_ready_response(str(exc))
 
 
 @router.post("/profile/refresh-license")
@@ -312,8 +313,8 @@ async def refresh_profile_license(
             regulator=payload.regulator,
             force_live_verification=payload.force_live_verification,
         )
-    except IAMSchemaNotReadyError:
-        return _iam_schema_not_ready_response()
+    except IAMSchemaNotReadyError as exc:
+        return _iam_schema_not_ready_response(str(exc))
     except RIAIAMPolicyError as exc:
         if exc.status_code == 409:
             return JSONResponse(
@@ -332,8 +333,8 @@ async def ria_home(firebase_uid: str = Depends(require_firebase_auth)):
     service = RIAIAMService()
     try:
         return await service.get_ria_home(firebase_uid)
-    except IAMSchemaNotReadyError:
-        return _iam_schema_not_ready_response()
+    except IAMSchemaNotReadyError as exc:
+        return _iam_schema_not_ready_response(str(exc))
 
 
 @router.get("/firms")
@@ -341,8 +342,8 @@ async def ria_firms(firebase_uid: str = Depends(require_firebase_auth)):
     service = RIAIAMService()
     try:
         return {"items": await service.list_ria_firms(firebase_uid)}
-    except IAMSchemaNotReadyError:
-        return _iam_schema_not_ready_response()
+    except IAMSchemaNotReadyError as exc:
+        return _iam_schema_not_ready_response(str(exc))
 
 
 @router.get("/clients")
@@ -365,8 +366,8 @@ async def ria_clients(
         if limit != 50:
             params["limit"] = limit
         return await service.list_ria_clients(firebase_uid, **params)
-    except IAMSchemaNotReadyError:
-        return _iam_schema_not_ready_response()
+    except IAMSchemaNotReadyError as exc:
+        return _iam_schema_not_ready_response(str(exc))
 
 
 @router.get("/clients/{investor_user_id}", response_model=RIAClientDetailResponse)
@@ -377,8 +378,8 @@ async def ria_client_detail(
     service = RIAIAMService()
     try:
         return await service.get_ria_client_detail(firebase_uid, investor_user_id)
-    except IAMSchemaNotReadyError:
-        return _iam_schema_not_ready_response()
+    except IAMSchemaNotReadyError as exc:
+        return _iam_schema_not_ready_response(str(exc))
     except RIAIAMPolicyError as exc:
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
 
@@ -388,8 +389,8 @@ async def ria_requests(firebase_uid: str = Depends(require_firebase_auth)):
     service = ConsentCenterService()
     try:
         return {"items": await service.list_outgoing_requests(firebase_uid)}
-    except IAMSchemaNotReadyError:
-        return _iam_schema_not_ready_response()
+    except IAMSchemaNotReadyError as exc:
+        return _iam_schema_not_ready_response(str(exc))
 
 
 @router.get("/request-bundles")
@@ -397,8 +398,8 @@ async def ria_request_bundles(firebase_uid: str = Depends(require_firebase_auth)
     service = RIAIAMService()
     try:
         return {"items": await service.list_ria_request_bundles(firebase_uid)}
-    except IAMSchemaNotReadyError:
-        return _iam_schema_not_ready_response()
+    except IAMSchemaNotReadyError as exc:
+        return _iam_schema_not_ready_response(str(exc))
 
 
 @router.get("/request-scopes")
@@ -406,8 +407,8 @@ async def ria_request_scopes(firebase_uid: str = Depends(require_firebase_auth))
     service = RIAIAMService()
     try:
         return {"items": await service.list_requestable_scope_templates(firebase_uid)}
-    except IAMSchemaNotReadyError:
-        return _iam_schema_not_ready_response()
+    except IAMSchemaNotReadyError as exc:
+        return _iam_schema_not_ready_response(str(exc))
     except RIAIAMPolicyError as exc:
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
 
@@ -417,8 +418,8 @@ async def ria_invites(firebase_uid: str = Depends(require_firebase_auth)):
     service = RIAIAMService()
     try:
         return {"items": await service.list_ria_invites(firebase_uid)}
-    except IAMSchemaNotReadyError:
-        return _iam_schema_not_ready_response()
+    except IAMSchemaNotReadyError as exc:
+        return _iam_schema_not_ready_response(str(exc))
 
 
 @router.post("/invites")
@@ -437,8 +438,8 @@ async def create_ria_invites(
             reason=payload.reason,
             targets=[target.model_dump() for target in payload.targets],
         )
-    except IAMSchemaNotReadyError:
-        return _iam_schema_not_ready_response()
+    except IAMSchemaNotReadyError as exc:
+        return _iam_schema_not_ready_response(str(exc))
     except RIAIAMPolicyError as exc:
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
 
@@ -456,8 +457,8 @@ async def update_ria_marketplace_discoverability(
             headline=payload.headline,
             strategy_summary=payload.strategy_summary,
         )
-    except IAMSchemaNotReadyError:
-        return _iam_schema_not_ready_response()
+    except IAMSchemaNotReadyError as exc:
+        return _iam_schema_not_ready_response(str(exc))
     except RIAIAMPolicyError as exc:
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
 
@@ -481,8 +482,8 @@ async def create_ria_request(
             firm_id=payload.firm_id,
             reason=payload.reason,
         )
-    except IAMSchemaNotReadyError:
-        return _iam_schema_not_ready_response()
+    except IAMSchemaNotReadyError as exc:
+        return _iam_schema_not_ready_response(str(exc))
     except RIAIAMPolicyError as exc:
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
 
@@ -503,8 +504,8 @@ async def create_ria_request_bundle(
             firm_id=payload.firm_id,
             reason=payload.reason,
         )
-    except IAMSchemaNotReadyError:
-        return _iam_schema_not_ready_response()
+    except IAMSchemaNotReadyError as exc:
+        return _iam_schema_not_ready_response(str(exc))
     except RIAIAMPolicyError as exc:
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
 
@@ -578,8 +579,8 @@ async def ria_pick_uploads(firebase_uid: str = Depends(require_firebase_auth)):
     service = RIAIAMService()
     try:
         return await service.get_active_ria_pick_package(firebase_uid)
-    except IAMSchemaNotReadyError:
-        return _iam_schema_not_ready_response()
+    except IAMSchemaNotReadyError as exc:
+        return _iam_schema_not_ready_response(str(exc))
     except RIAIAMPolicyError as exc:
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
 
@@ -602,8 +603,8 @@ async def parse_ria_picks_csv(
                 screening_sections=payload.screening_sections,
             )
         }
-    except IAMSchemaNotReadyError:
-        return _iam_schema_not_ready_response()
+    except IAMSchemaNotReadyError as exc:
+        return _iam_schema_not_ready_response(str(exc))
     except RIAIAMPolicyError as exc:
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
 
@@ -626,8 +627,8 @@ async def upload_ria_picks(
             source_manifest_revision=payload.source_manifest_revision,
             retire_legacy=payload.retire_legacy,
         )
-    except IAMSchemaNotReadyError:
-        return _iam_schema_not_ready_response()
+    except IAMSchemaNotReadyError as exc:
+        return _iam_schema_not_ready_response(str(exc))
     except RIAIAMPolicyError as exc:
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
 
@@ -640,8 +641,8 @@ async def ria_workspace(
     service = RIAIAMService()
     try:
         return await service.get_ria_workspace(firebase_uid, investor_user_id)
-    except IAMSchemaNotReadyError:
-        return _iam_schema_not_ready_response()
+    except IAMSchemaNotReadyError as exc:
+        return _iam_schema_not_ready_response(str(exc))
     except RIAIAMPolicyError as exc:
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
 
@@ -659,7 +660,7 @@ async def set_ria_client_picks_share(
             investor_user_id=investor_user_id,
             enabled=payload.enabled,
         )
-    except IAMSchemaNotReadyError:
-        return _iam_schema_not_ready_response()
+    except IAMSchemaNotReadyError as exc:
+        return _iam_schema_not_ready_response(str(exc))
     except RIAIAMPolicyError as exc:
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
