@@ -9,6 +9,7 @@ from .data_tools import (
     handle_get_financial,
     handle_get_food,
     handle_get_professional,
+    handle_get_shopping_memory,
 )
 from .definitions import get_tool_definitions
 from .kai_tools import (
@@ -48,6 +49,7 @@ __all__ = [
     "handle_get_financial",
     "handle_get_food",
     "handle_get_professional",
+    "handle_get_shopping_memory",
     # Utility
     "handle_validate_token",
     "handle_delegate",

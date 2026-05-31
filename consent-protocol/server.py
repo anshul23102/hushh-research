@@ -15,9 +15,11 @@ from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
 from fastapi.responses import JSONResponse, RedirectResponse  # noqa: E402
 
 from hushh_mcp.runtime_settings import get_app_runtime_settings  # noqa: E402
+from mcp_modules.log_redaction import install_sensitive_log_filter  # noqa: E402
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
+install_sensitive_log_filter()
 logger = logging.getLogger(__name__)
 _APP_RUNTIME_SETTINGS = get_app_runtime_settings()
 
@@ -70,17 +72,24 @@ def _parse_cors_allowed_origins() -> list[str]:
     if frontend_url and frontend_url not in origins:
         origins.append(frontend_url)
 
+    if not _is_production():
+        for dev_origin in (
+            "http://localhost:3000",
+            "http://127.0.0.1:3000",
+            "http://localhost:3001",
+            "http://127.0.0.1:3001",
+            "http://10.0.0.177:3000",
+        ):
+            if dev_origin not in origins:
+                origins.append(dev_origin)
+
     if origins:
         return origins
 
     if _is_production():
         return []
 
-    return [
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-        "http://10.0.0.177:3000",
-    ]
+    return []
 
 
 # Import route modules
@@ -258,6 +267,11 @@ from hushh_mcp.services.gmail_receipts_service import (  # noqa: E402
 
 app.include_router(kai_router)
 app.include_router(one_router)
+
+# Consent-gated shopping-memory endpoint for MCP agents
+from api.routes.kai.shopping_memory import router as shopping_memory_router  # noqa: E402
+
+app.include_router(shopping_memory_router, prefix="/api")
 
 # Phase 2: Investor Profiles (Public Discovery Layer)
 from api.routes import investors  # noqa: E402
