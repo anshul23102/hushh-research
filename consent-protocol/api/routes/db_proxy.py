@@ -533,27 +533,25 @@ async def vault_wrapper_upsert(
 
     except ValueError as e:
         message = str(e)
-        logger.warning(
-            "vault/wrapper/upsert validation error user=%s method=%s: %s",
-            _mask_user_id(request.userId),
-            request.method,
-            e,
-        )
         if (
             "requires passkey credential metadata including rp id" in message
             or "wrapper rp id is not allowed for this environment" in message
         ):
-            raise HTTPException(
-                status_code=400,
-                detail={
-                    "error": "Passkey credential metadata is required for this wrapper.",
-                    "code": "VAULT_PASSKEY_RP_MISMATCH",
-                },
-            )
-        raise HTTPException(
-            status_code=400,
-            detail={"error": "Invalid vault wrapper parameters.", "code": "VAULT_VALIDATION_ERROR"},
+            code = "VAULT_PASSKEY_RP_MISMATCH"
+            detail = {
+                "error": "Passkey credential metadata is required for this wrapper.",
+                "code": code,
+            }
+        else:
+            code = "VAULT_VALIDATION_ERROR"
+            detail = {"error": "Invalid vault wrapper parameters.", "code": code}
+        logger.warning(
+            "vault/wrapper/upsert validation error user=%s method=%s code=%s",
+            _mask_user_id(request.userId),
+            request.method,
+            code,
         )
+        raise HTTPException(status_code=400, detail=detail)
     except Exception as e:
         logger.error(
             "vault/wrapper/upsert error user=%s method=%s: %s",
@@ -605,12 +603,6 @@ async def vault_wrapper_delete(
 
     except ValueError as e:
         message = str(e)
-        logger.warning(
-            "vault/wrapper/delete validation error user=%s method=%s: %s",
-            _mask_user_id(request.userId),
-            request.method,
-            e,
-        )
         code = "VAULT_VALIDATION_ERROR"
         if "vaultKeyHash mismatch" in message:
             code = "VAULT_KEY_HASH_MISMATCH"
@@ -620,6 +612,12 @@ async def vault_wrapper_delete(
             code = "VAULT_PASSPHRASE_REQUIRED"
         elif "Fallback primary method/wrapper" in message:
             code = "VAULT_PRIMARY_WRAPPER_NOT_FOUND"
+        logger.warning(
+            "vault/wrapper/delete validation error user=%s method=%s code=%s",
+            _mask_user_id(request.userId),
+            request.method,
+            code,
+        )
         _VAULT_DELETE_ERROR_MESSAGES: dict[str, str] = {
             "VAULT_KEY_HASH_MISMATCH": "Vault key hash does not match.",
             "VAULT_WRAPPER_NOT_FOUND": "The specified vault wrapper was not found.",
@@ -667,27 +665,22 @@ async def vault_primary_set(
 
     except ValueError as e:
         message = str(e)
+        if "Primary method/wrapper must be an enrolled wrapper" in message:
+            code = "VAULT_PRIMARY_WRAPPER_NOT_FOUND"
+            detail = {
+                "error": "The specified primary wrapper is not enrolled for this vault.",
+                "code": code,
+            }
+        else:
+            code = "VAULT_VALIDATION_ERROR"
+            detail = {"error": "Invalid primary method parameters.", "code": code}
         logger.warning(
-            "vault/primary/set validation error user=%s primary=%s: %s",
+            "vault/primary/set validation error user=%s primary=%s code=%s",
             _mask_user_id(request.userId),
             request.primaryMethod,
-            e,
+            code,
         )
-        if "Primary method/wrapper must be an enrolled wrapper" in message:
-            raise HTTPException(
-                status_code=400,
-                detail={
-                    "error": "The specified primary wrapper is not enrolled for this vault.",
-                    "code": "VAULT_PRIMARY_WRAPPER_NOT_FOUND",
-                },
-            )
-        raise HTTPException(
-            status_code=400,
-            detail={
-                "error": "Invalid primary method parameters.",
-                "code": "VAULT_VALIDATION_ERROR",
-            },
-        )
+        raise HTTPException(status_code=400, detail=detail)
     except Exception as e:
         logger.error(
             "vault/primary/set error user=%s primary=%s: %s",

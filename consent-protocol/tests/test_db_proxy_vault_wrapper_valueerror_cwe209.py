@@ -99,7 +99,7 @@ def test_wrapper_upsert_passkey_mismatch_does_not_echo_sentinel(client):
         instance = MockService.return_value
         instance.upsert_wrapper = AsyncMock(side_effect=ValueError(error_msg))
         response = client.post(
-            "/api/vault/wrapper/upsert",
+            "/db/vault/wrapper/upsert",
             json=_WRAPPER_UPSERT_BODY,
             headers={"Authorization": "Bearer fake-token"},
         )
@@ -120,7 +120,7 @@ def test_wrapper_upsert_generic_error_does_not_echo_sentinel(client):
         instance = MockService.return_value
         instance.upsert_wrapper = AsyncMock(side_effect=ValueError(error_msg))
         response = client.post(
-            "/api/vault/wrapper/upsert",
+            "/db/vault/wrapper/upsert",
             json=_WRAPPER_UPSERT_BODY,
             headers={"Authorization": "Bearer fake-token"},
         )
@@ -141,7 +141,7 @@ def test_wrapper_upsert_error_response_uses_static_message(client):
             side_effect=ValueError("wrapper rp id is not allowed for this environment")
         )
         response = client.post(
-            "/api/vault/wrapper/upsert",
+            "/db/vault/wrapper/upsert",
             json=_WRAPPER_UPSERT_BODY,
             headers={"Authorization": "Bearer fake-token"},
         )
@@ -171,7 +171,7 @@ def test_wrapper_delete_hash_mismatch_does_not_echo_sentinel(client):
         instance = MockService.return_value
         instance.delete_wrapper = AsyncMock(side_effect=ValueError(error_msg))
         response = client.post(
-            "/api/vault/wrapper/delete",
+            "/db/vault/wrapper/delete",
             json=_WRAPPER_DELETE_BODY,
             headers={
                 "Authorization": "Bearer fake-token",
@@ -196,7 +196,7 @@ def test_wrapper_delete_wrapper_not_found_does_not_echo_sentinel(client):
         instance = MockService.return_value
         instance.delete_wrapper = AsyncMock(side_effect=ValueError(error_msg))
         response = client.post(
-            "/api/vault/wrapper/delete",
+            "/db/vault/wrapper/delete",
             json=_WRAPPER_DELETE_BODY,
             headers={
                 "Authorization": "Bearer fake-token",
@@ -227,7 +227,7 @@ def test_primary_set_not_enrolled_does_not_echo_sentinel(client):
         instance = MockService.return_value
         instance.set_primary_method = AsyncMock(side_effect=ValueError(error_msg))
         response = client.post(
-            "/api/vault/primary/set",
+            "/db/vault/primary/set",
             json=_PRIMARY_SET_BODY,
             headers={"Authorization": "Bearer fake-token"},
         )
@@ -248,7 +248,7 @@ def test_primary_set_generic_error_does_not_echo_sentinel(client):
         instance = MockService.return_value
         instance.set_primary_method = AsyncMock(side_effect=ValueError(error_msg))
         response = client.post(
-            "/api/vault/primary/set",
+            "/db/vault/primary/set",
             json=_PRIMARY_SET_BODY,
             headers={"Authorization": "Bearer fake-token"},
         )
