@@ -7,6 +7,7 @@ import logging
 import os
 import re
 import time
+from collections import OrderedDict
 from copy import deepcopy
 from pathlib import Path
 from typing import Any
@@ -369,7 +370,11 @@ _PREVIEW_TOTAL_BUDGET_SECONDS = max(
     4.0,
     float(os.getenv("PKM_AGENT_LAB_PREVIEW_BUDGET_SECONDS", "12") or "12"),
 )
-_PREVIEW_CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
+_PREVIEW_CACHE_MAX_SIZE = max(
+    1,
+    int(os.getenv("PKM_AGENT_LAB_PREVIEW_CACHE_MAX_SIZE", "256") or "256"),
+)
+_PREVIEW_CACHE: OrderedDict[str, tuple[float, dict[str, Any]]] = OrderedDict()
 _PREVIEW_INFLIGHT: dict[str, asyncio.Task[dict[str, Any]]] = {}
 _SOFT_ONTOLOGY_KEYS = tuple(
     entry.domain_key
@@ -657,6 +662,7 @@ class PKMAgentLabService:
         if expires_at <= time.time():
             _PREVIEW_CACHE.pop(cache_key, None)
             return None
+        _PREVIEW_CACHE.move_to_end(cache_key)
         return deepcopy(payload)
 
     @classmethod
@@ -665,6 +671,9 @@ class PKMAgentLabService:
             time.time() + _PREVIEW_CACHE_TTL_SECONDS,
             deepcopy(payload),
         )
+        _PREVIEW_CACHE.move_to_end(cache_key)
+        while len(_PREVIEW_CACHE) > _PREVIEW_CACHE_MAX_SIZE:
+            _PREVIEW_CACHE.popitem(last=False)
 
     @staticmethod
     def _normalize_segment(value: str) -> str:
