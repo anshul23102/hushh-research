@@ -1255,7 +1255,9 @@ class ConsentDBService:
         else:
             # Fallback: return issued_at as ID if response doesn't have id
             logger.warning(
-                f"Inserted {action} event but no ID returned, using issued_at: {issued_at}"
+                "consent_db.insert_event.missing_id action=%s issued_at=%s",
+                action,
+                issued_at,
             )
             return issued_at
 
