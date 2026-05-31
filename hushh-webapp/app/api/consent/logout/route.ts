@@ -23,6 +23,12 @@ export async function POST(request: NextRequest) {
       return invalidJsonPayloadResponse();
     }
     const { userId } = body;
+    const authHeader =
+      request.headers.get("authorization") ||
+      request.headers.get("Authorization");
+    const consentHeader =
+      request.headers.get("x-hushh-consent") ||
+      request.headers.get("X-Hushh-Consent");
 
     if (!userId) {
       return NextResponse.json(
@@ -31,11 +37,22 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    if (!authHeader && !consentHeader) {
+      return NextResponse.json(
+        { error: "Authorization header is required" },
+        { status: 401 },
+      );
+    }
+
     console.log("[API] Destroying session tokens");
 
     const response = await fetch(`${BACKEND_URL}/api/consent/logout`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        ...(authHeader ? { Authorization: authHeader } : {}),
+        ...(consentHeader ? { "X-Hushh-Consent": consentHeader } : {}),
+      },
       body: JSON.stringify({ userId }),
     });
 
