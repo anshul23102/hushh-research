@@ -889,7 +889,9 @@ class PortfolioParser:
                                 continue
 
                 logger.info(
-                    f"Parsed Fidelity PDF: {len(portfolio.holdings)} holdings, ${portfolio.ending_value:,.2f} value"
+                    "portfolio_import.fidelity_pdf.parsed holdings=%d value=%.2f",
+                    len(portfolio.holdings),
+                    portfolio.ending_value,
                 )
 
         except Exception as e:
@@ -1181,7 +1183,9 @@ class PortfolioParser:
                                 continue
 
                 logger.info(
-                    f"Parsed JPMorgan PDF: {len(portfolio.holdings)} holdings, ${portfolio.ending_value:,.2f} value"
+                    "portfolio_import.jpmorgan_pdf.parsed holdings=%d value=%.2f",
+                    len(portfolio.holdings),
+                    portfolio.ending_value,
                 )
 
         except Exception as e:
@@ -1467,7 +1471,9 @@ class RichPDFParser:
                     portfolio.ending_value += h.market_value
 
                 logger.info(
-                    f"Rich PDF Parser: {len(holdings)} holdings, ${portfolio.ending_value:,.2f} value"
+                    "portfolio_import.rich_pdf_parser.parsed holdings=%d value=%.2f",
+                    len(holdings),
+                    portfolio.ending_value,
                 )
 
         except Exception as e:
@@ -2067,7 +2073,9 @@ Statement text (first 12000 chars):
                 portfolio = asyncio.run(self._parse_with_gemini_comprehensive(pdf_bytes, filename))
 
             if portfolio and portfolio.holdings:
-                logger.info("portfolio_import.gemini_vision_extracted holdings=%d", len(portfolio.holdings))
+                logger.info(
+                    "portfolio_import.gemini_vision_extracted holdings=%d", len(portfolio.holdings)
+                )
                 logger.info("portfolio_import.total_value: $%.2f", portfolio.total_value)
                 portfolio.extraction_method = "gemini_vision"
                 return portfolio
@@ -2150,7 +2158,9 @@ Statement text (first 12000 chars):
                     location=location,
                 )
                 model_to_use = GEMINI_MODEL_VERTEX
-                logger.info("portfolio_import.vertex_ai project=%s model=%s", project_id, model_to_use)
+                logger.info(
+                    "portfolio_import.vertex_ai project=%s model=%s", project_id, model_to_use
+                )
 
             except Exception as e:
                 logger.error("portfolio_import.vertex_ai_init.error: %s", e)
@@ -2329,7 +2339,9 @@ Extract data into the following nested objects:
 - Robinhood: Look for "Portfolio", "Holdings", "History"
 """
 
-        logger.info("portfolio_import.gemini_vision_send bytes=%d model=%s", len(pdf_bytes), model_to_use)
+        logger.info(
+            "portfolio_import.gemini_vision_send bytes=%d model=%s", len(pdf_bytes), model_to_use
+        )
 
         # Create the content with PDF - use simple list format for Vertex AI compatibility
         contents = [
@@ -2361,11 +2373,15 @@ Extract data into the following nested objects:
                     # Log progress every 10 chunks
                     if chunk_count % 10 == 0:
                         logger.info(
-                            f"Streaming progress: {len(full_response)} chars received ({chunk_count} chunks)"
+                            "portfolio_import.streaming_progress chars=%d chunks=%d",
+                            len(full_response),
+                            chunk_count,
                         )
 
             logger.info(
-                f"Streaming complete: {len(full_response)} chars total ({chunk_count} chunks)"
+                "portfolio_import.streaming_complete chars=%d chunks=%d",
+                len(full_response),
+                chunk_count,
             )
         except Exception as stream_error:
             logger.warning("portfolio_import.streaming_fallback: %s", stream_error)
@@ -2602,7 +2618,8 @@ Extract data into the following nested objects:
 
         logger.info("portfolio_import.gemini_parsed holdings=%d", len(portfolio.holdings))
         logger.info(
-            f"Account: {portfolio.account_info.holder_name if portfolio.account_info else 'Unknown'}"
+            "portfolio_import.account_holder_present=%s",
+            bool(portfolio.account_info and portfolio.account_info.holder_name),
         )
         logger.info("portfolio_import.total_value: $%.2f", portfolio.total_value)
         logger.info("portfolio_import.cash_balance: $%.2f", portfolio.cash_balance)
@@ -3343,7 +3360,10 @@ Content sample:
                         "portfolio_import.comprehensive_extracted holdings=%d",
                         len(comprehensive_portfolio.holdings),
                     )
-                    logger.info("portfolio_import.extraction_method: %s", comprehensive_portfolio.extraction_method)
+                    logger.info(
+                        "portfolio_import.extraction_method: %s",
+                        comprehensive_portfolio.extraction_method,
+                    )
 
                     # Convert to EnhancedPortfolio for backward compatibility
                     enhanced_portfolio = self._convert_comprehensive_to_enhanced(
