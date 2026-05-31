@@ -47,6 +47,49 @@ def _reset_module_cache(monkeypatch):
     _PREVIEW_CACHE._max = original_max
 
 
+def _structure_response_payload(
+    *,
+    domain: str,
+    summary: str,
+    latency_ms: int = 0,
+) -> dict:
+    candidate_payload = {
+        domain: {
+            "entities": {
+                f"mem_{domain}": {
+                    "entity_id": f"mem_{domain}",
+                    "kind": "preference",
+                    "summary": summary,
+                    "status": "active",
+                }
+            }
+        }
+    }
+    structure_decision = {
+        "action": "create_domain",
+        "target_domain": domain,
+        "json_paths": [domain],
+        "top_level_scope_paths": [domain],
+        "externalizable_paths": [domain],
+        "summary_projection": {"top_level_scope": domain},
+        "sensitivity_labels": {},
+        "confidence": 0.9,
+        "source_agent": "test",
+        "contract_version": 1,
+    }
+    return {
+        "agent_id": "pkm-structure-agent",
+        "agent_name": "PKM Structure Agent",
+        "model": "stub",
+        "used_fallback": False,
+        "candidate_payload": candidate_payload,
+        "structure_decision": structure_decision,
+        "preview_cards": [{"domain": domain, "summary": summary}],
+        "preview_summary": {"domain_count": 1},
+        "performance": {"latency_ms": latency_ms},
+    }
+
+
 # ===========================================================================
 # Construction
 # ===========================================================================
@@ -370,12 +413,7 @@ class TestPreviewCacheHTTPReachability:
         """Cache hit: _PreviewCache returns stored payload, route surfaces it."""
         _PREVIEW_CACHE.clear()
         cache_key = "pkm_cache_test_uid:test message:"
-        stored = {
-            "preview_cards": [{"domain": "finance", "summary": "test"}],
-            "preview_summary": {"domain_count": 1},
-            "model": "stub",
-            "latency_ms": 0,
-        }
+        stored = _structure_response_payload(domain="finance", summary="test")
         _PREVIEW_CACHE.set(cache_key, stored, ttl_seconds=300)
 
         async def _stubbed_generate(self, *, user_id, message, **kwargs):
@@ -384,12 +422,7 @@ class TestPreviewCacheHTTPReachability:
             )
             if cached is not None:
                 return cached
-            return {
-                "preview_cards": [],
-                "preview_summary": {},
-                "model": "stub",
-                "latency_ms": 0,
-            }
+            return _structure_response_payload(domain="fallback", summary="stub")
 
         monkeypatch.setattr(
             PKMAgentLabService, "generate_structure_preview", _stubbed_generate
@@ -419,17 +452,20 @@ class TestPreviewCacheHTTPResponse:
         """After pop, _PreviewCache returns None; service is called and returns fresh data."""
         uid = "pkm_cache_test_uid"
         cache_key = f"{uid}:fresh message:"
-        _PREVIEW_CACHE.set(cache_key, {"preview_cards": [], "preview_summary": {}}, ttl_seconds=300)
+        _PREVIEW_CACHE.set(
+            cache_key,
+            _structure_response_payload(domain="cached", summary="stale"),
+            ttl_seconds=300,
+        )
         _PREVIEW_CACHE.pop(cache_key)
         assert _PREVIEW_CACHE.get(cache_key) is None
 
         async def _stubbed_generate(self, *, user_id, message, **kwargs):
-            return {
-                "preview_cards": [{"domain": "health", "summary": "fresh"}],
-                "preview_summary": {"domain_count": 1},
-                "model": "stub",
-                "latency_ms": 5,
-            }
+            return _structure_response_payload(
+                domain="health",
+                summary="fresh",
+                latency_ms=5,
+            )
 
         monkeypatch.setattr(
             PKMAgentLabService, "generate_structure_preview", _stubbed_generate
@@ -446,4 +482,4 @@ class TestPreviewCacheHTTPResponse:
         assert response.status_code == 200
         body = response.json()
         assert body["preview_cards"][0]["domain"] == "health"
-        assert body["latency_ms"] == 5
+        assert body["performance"]["latency_ms"] == 5
