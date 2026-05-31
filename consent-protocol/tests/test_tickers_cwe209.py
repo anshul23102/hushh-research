@@ -13,9 +13,11 @@ import pathlib
 from unittest.mock import AsyncMock, patch
 
 import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from api.middleware import require_vault_owner_token
+from api.routes.tickers import router as tickers_router
 
 _UID = "test-uid"
 _TOKEN = {"user_id": _UID, "token": "fake-token", "scope": "vault.owner"}
@@ -25,7 +27,8 @@ _INTERNAL_MSG = "Connection refused: postgresql://secret-host/db"
 
 @pytest.fixture()
 def client():
-    from api.main import app
+    app = FastAPI()
+    app.include_router(tickers_router)
 
     app.dependency_overrides[require_vault_owner_token] = lambda: _TOKEN
     yield TestClient(app, raise_server_exceptions=False)
@@ -39,11 +42,14 @@ def client():
 
 def test_search_tickers_500_opaque(client: TestClient) -> None:
     """Internal exception must not leak to the response detail."""
-    with patch(
-        "api.routes.tickers.TickerDBService",
-    ) as MockService, patch(
-        "api.routes.tickers.ticker_cache",
-        loaded=False,
+    with (
+        patch(
+            "api.routes.tickers.TickerDBService",
+        ) as MockService,
+        patch(
+            "api.routes.tickers.ticker_cache",
+            loaded=False,
+        ),
     ):
         instance = MockService.return_value
         instance.search_tickers = AsyncMock(side_effect=RuntimeError(_INTERNAL_MSG))
