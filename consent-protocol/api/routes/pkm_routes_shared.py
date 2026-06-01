@@ -15,7 +15,7 @@ from datetime import datetime
 from typing import Any, List, Optional
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, status
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field, ValidationError, field_validator
 
 from api.middleware import require_vault_owner_token
 from hushh_mcp.services.domain_contracts import canonical_top_level_domain, domain_registry_payload
@@ -308,14 +308,45 @@ async def fetch_decisions(user_id: str, limit: int = 50) -> list[DecisionRecord]
 class EncryptedBlob(BaseModel):
     """Encrypted data blob."""
 
-    ciphertext: str = Field(..., description="AES-256-GCM encrypted data")
-    iv: str = Field(..., description="Initialization vector")
-    tag: str = Field(..., description="Authentication tag")
-    algorithm: str = Field(default="aes-256-gcm", description="Encryption algorithm")
+    ciphertext: str = Field(
+        ...,
+        description="AES-256-GCM encrypted data (base64-encoded)",
+        min_length=1,
+        max_length=10_485_760,
+    )
+    iv: str = Field(
+        ...,
+        description="Initialization vector (base64 or hex)",
+        min_length=1,
+        max_length=512,
+    )
+    tag: str = Field(
+        ...,
+        description="Authentication tag (base64 or hex)",
+        min_length=1,
+        max_length=512,
+    )
+    algorithm: str = Field(
+        default="aes-256-gcm",
+        description="Encryption algorithm identifier",
+        max_length=64,
+    )
     segments: dict[str, "EncryptedBlob"] = Field(
         default_factory=dict,
         description="Optional segmented PKM ciphertext payloads keyed by segment id",
+        max_length=100,
     )
+
+    @field_validator("segments")
+    @classmethod
+    def _validate_segment_keys(cls, v: dict) -> dict:
+        """Reject oversized or empty segment key strings."""
+        for key in v:
+            if not isinstance(key, str) or not key or len(key) > 128:
+                raise ValueError(
+                    "Each segment key must be a non-empty string of at most 128 characters"
+                )
+        return v
 
 
 class PathDescriptorPayload(BaseModel):
@@ -354,7 +385,7 @@ class DomainManifestPayload(BaseModel):
 
 
 class UpgradeContextPayload(BaseModel):
-    run_id: str = Field(..., min_length=1)
+    run_id: str = Field(..., min_length=1, max_length=256)
     prior_domain_contract_version: Optional[int] = Field(default=None, ge=0)
     new_domain_contract_version: Optional[int] = Field(default=None, ge=0)
     prior_readable_summary_version: Optional[int] = Field(default=None, ge=0)
@@ -363,7 +394,7 @@ class UpgradeContextPayload(BaseModel):
 
 
 class WriteProjectionPayload(BaseModel):
-    projection_type: str = Field(..., min_length=1)
+    projection_type: str = Field(..., min_length=1, max_length=256)
     projection_version: int = Field(default=1, ge=1)
     payload: dict = Field(default_factory=dict)
 
