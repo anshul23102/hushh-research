@@ -34,7 +34,6 @@ from api.routes.ria import (
     RIAPicksSyncRequest,
 )
 
-
 # RIAOnboardingSubmitRequest
 
 class TestOnboardingSubmitBounds:
