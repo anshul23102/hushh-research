@@ -61,15 +61,25 @@ _PRIMARY_SET_BODY = {
 
 @pytest.fixture()
 def client():
-    from server import app
+    from fastapi import FastAPI
 
-    with TestClient(app, raise_server_exceptions=False) as c:
-        yield c
+    from api.middleware import require_firebase_auth
+    from api.routes import db_proxy as db_proxy_mod
+
+    app = FastAPI()
+    app.include_router(db_proxy_mod.router)
+    app.dependency_overrides[require_firebase_auth] = lambda: _FAKE_FIREBASE_UID
+    app.dependency_overrides[db_proxy_mod.require_vault_owner_consent_header] = (
+        lambda: _FAKE_TOKEN_DATA
+    )
+    # Disable the client-version gate so tests reach the business-logic layer.
+    with patch.object(db_proxy_mod, "ENFORCE_VAULT_WRITE_CLIENT_VERSION", ""):
+        yield TestClient(app, raise_server_exceptions=False)
 
 
 def _patch_auth(uid: str = _FAKE_FIREBASE_UID):
     return patch(
-        "api.middleware.require_firebase_auth",
+        "api.routes.db_proxy.require_firebase_auth",
         return_value=uid,
     )
 
