@@ -32,6 +32,7 @@ INTERNAL_STRINGS = [
 
 def _make_app():
     from fastapi import FastAPI
+
     from api.routes.ria import router
 
     app = FastAPI()
