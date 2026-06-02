@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Request
@@ -15,6 +16,8 @@ from hushh_mcp.services.crd_scrape_proxy_service import (
     CrdScrapeProxyService,
     normalize_crd_number,
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/ria", tags=["RIA", "CRD Scraper"])
 
@@ -108,9 +111,13 @@ async def _call_provider(coro: Any) -> CrdScrapeProviderResponse:
     try:
         return await coro
     except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        logger.warning("crd_scraper.provider_call.validation_error: %s", exc)
+        raise HTTPException(status_code=422, detail="Invalid request data") from exc
     except CrdScrapeProxyError as exc:
-        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+        logger.error("crd_scraper.provider_call.proxy_error status=%s: %s", exc.status_code, exc)
+        if exc.status_code >= 500:
+            raise HTTPException(status_code=exc.status_code, detail="External service error") from exc
+        raise HTTPException(status_code=exc.status_code, detail="Request failed") from exc
 
 
 def _request_id(request: Request) -> str | None:
