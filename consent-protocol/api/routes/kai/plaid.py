@@ -28,64 +28,64 @@ require_transfer_scope_token = require_consent_scope("brokerage.transfer.write")
 
 
 class PlaidLinkTokenRequest(BaseModel):
-    user_id: str
+    user_id: str = Field(..., min_length=1, max_length=128)
     item_id: Optional[str] = None
     redirect_uri: Optional[str] = None
 
 
 class PlaidPublicTokenExchangeRequest(BaseModel):
-    user_id: str
-    public_token: str
+    user_id: str = Field(..., min_length=1, max_length=128)
+    public_token: str = Field(..., min_length=1, max_length=512)
     metadata: dict[str, Any] | None = None
     resume_session_id: Optional[str] = None
-    terms_version: str | None = None
-    consent_timestamp: str | None = None
-    alpaca_account_id: str | None = None
+    terms_version: str | None = Field(default=None, max_length=64)
+    consent_timestamp: str | None = Field(default=None, max_length=64)
+    alpaca_account_id: str | None = Field(default=None, max_length=128)
 
 
 class PlaidOAuthResumeRequest(BaseModel):
-    user_id: str
+    user_id: str = Field(..., min_length=1, max_length=128)
     resume_session_id: str = Field(min_length=1)
 
 
 class PlaidRefreshRequest(BaseModel):
-    user_id: str
-    item_id: str | None = None
+    user_id: str = Field(..., min_length=1, max_length=128)
+    item_id: str | None = Field(default=None, max_length=128)
 
 
 class PlaidItemRemoveRequest(BaseModel):
-    user_id: str
+    user_id: str = Field(..., min_length=1, max_length=128)
 
 
 class PlaidSourcePreferenceRequest(BaseModel):
-    user_id: str
+    user_id: str = Field(..., min_length=1, max_length=128)
     active_source: Literal["statement", "plaid"]
 
 
 class PlaidRefreshCancelRequest(BaseModel):
-    user_id: str
+    user_id: str = Field(..., min_length=1, max_length=128)
 
 
 class PlaidFundingTransactionsSyncRequest(BaseModel):
-    user_id: str
+    user_id: str = Field(..., min_length=1, max_length=128)
     item_id: str = Field(min_length=1)
-    cursor: str | None = None
+    cursor: str | None = Field(default=None, max_length=256)
 
 
 class PlaidFundingDefaultAccountRequest(BaseModel):
-    user_id: str
+    user_id: str = Field(..., min_length=1, max_length=128)
     item_id: str = Field(min_length=1)
     account_id: str = Field(min_length=1)
 
 
 class PlaidFundingBrokerageAccountRequest(BaseModel):
-    user_id: str
+    user_id: str = Field(..., min_length=1, max_length=128)
     alpaca_account_id: str | None = Field(default=None, min_length=1)
     set_default: bool = True
 
 
 class PlaidTransferCreateRequest(BaseModel):
-    user_id: str
+    user_id: str = Field(..., min_length=1, max_length=128)
     funding_item_id: str = Field(min_length=1)
     funding_account_id: str = Field(min_length=1)
     amount: float = Field(gt=0)
@@ -93,42 +93,42 @@ class PlaidTransferCreateRequest(BaseModel):
     direction: Literal["to_brokerage", "from_brokerage"] = "to_brokerage"
     network: str = "ach"
     ach_class: str = "web"
-    description: str | None = None
-    idempotency_key: str | None = None
-    brokerage_item_id: str | None = None
-    brokerage_account_id: str | None = None
-    relationship_id: str | None = None
-    redirect_uri: str | None = None
+    description: str | None = Field(default=None, max_length=512)
+    idempotency_key: str | None = Field(default=None, max_length=512)
+    brokerage_item_id: str | None = Field(default=None, max_length=512)
+    brokerage_account_id: str | None = Field(default=None, max_length=512)
+    relationship_id: str | None = Field(default=None, max_length=512)
+    redirect_uri: str | None = Field(default=None, max_length=512)
 
 
 class PlaidFundingReconciliationRequest(BaseModel):
-    user_id: str
+    user_id: str = Field(..., min_length=1, max_length=128)
     max_rows: int = Field(default=200, ge=1, le=1000)
     trigger_source: str = "manual"
 
 
 class PlaidFundingEscalationRequest(BaseModel):
-    user_id: str
-    transfer_id: str | None = None
-    relationship_id: str | None = None
+    user_id: str = Field(..., min_length=1, max_length=128)
+    transfer_id: str | None = Field(default=None, max_length=128)
+    relationship_id: str | None = Field(default=None, max_length=512)
     severity: Literal["low", "normal", "high", "urgent"] = "normal"
     notes: str = Field(min_length=1)
-    created_by: str | None = None
+    created_by: str | None = Field(default=None, max_length=512)
 
 
 class AlpacaConnectStartRequest(BaseModel):
-    user_id: str
-    redirect_uri: str | None = None
+    user_id: str = Field(..., min_length=1, max_length=128)
+    redirect_uri: str | None = Field(default=None, max_length=512)
 
 
 class AlpacaConnectCompleteRequest(BaseModel):
-    user_id: str
+    user_id: str = Field(..., min_length=1, max_length=128)
     state: str = Field(min_length=1)
     code: str = Field(min_length=1)
 
 
 class PlaidFundedTradeCreateRequest(BaseModel):
-    user_id: str
+    user_id: str = Field(..., min_length=1, max_length=128)
     funding_item_id: str = Field(min_length=1)
     funding_account_id: str = Field(min_length=1)
     symbol: str = Field(min_length=1)
@@ -138,13 +138,13 @@ class PlaidFundedTradeCreateRequest(BaseModel):
     order_type: Literal["market", "limit"] = "market"
     time_in_force: Literal["day", "gtc", "opg", "cls", "ioc", "fok"] = "day"
     limit_price: float | None = Field(default=None, gt=0)
-    brokerage_account_id: str | None = None
-    transfer_idempotency_key: str | None = None
-    trade_idempotency_key: str | None = None
+    brokerage_account_id: str | None = Field(default=None, max_length=512)
+    transfer_idempotency_key: str | None = Field(default=None, max_length=512)
+    trade_idempotency_key: str | None = Field(default=None, max_length=512)
 
 
 class PlaidFundedTradeRefreshRequest(BaseModel):
-    user_id: str
+    user_id: str = Field(..., min_length=1, max_length=128)
 
 
 def _verify_user(token_data: dict[str, Any], requested_user_id: str) -> None:
