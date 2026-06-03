@@ -2192,6 +2192,7 @@ async def get_dashboard_profile_picks(
     user_id: str,
     symbols: Optional[str] = Query(
         default=None,
+        max_length=512,
         description="Optional comma-separated ticker symbols from current holdings context.",
     ),
     limit: int = Query(default=4, ge=1, le=_MAX_PROFILE_PICKS),
