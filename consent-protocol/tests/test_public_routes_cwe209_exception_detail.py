@@ -44,8 +44,11 @@ def _tickers_client() -> TestClient:
 
 
 def _investors_client() -> TestClient:
+    from api.middleware import require_firebase_auth
+
     app = FastAPI()
     app.include_router(investors_router)
+    app.dependency_overrides[require_firebase_auth] = lambda: "test_uid"
     return TestClient(app, raise_server_exceptions=False)
 
 
