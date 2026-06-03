@@ -167,7 +167,7 @@ async def get_conversation_history(
 
 @router.get("/chat/conversations/{user_id}")
 async def list_user_conversations(
-    user_id: str,
+    user_id: str = Path(..., max_length=128),
     token_data: dict = Depends(require_vault_owner_token),
     limit: int = Query(default=20, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
@@ -221,7 +221,7 @@ class InitialChatStateResponse(BaseModel):
 
 @router.get("/chat/initial-state/{user_id}", response_model=InitialChatStateResponse)
 async def get_initial_chat_state(
-    user_id: str,
+    user_id: str = Path(..., max_length=128),
     token_data: dict = Depends(require_vault_owner_token),
 ) -> InitialChatStateResponse:
     """
