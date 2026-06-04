@@ -11,6 +11,13 @@ The data here is NOT encrypted (it's all from public SEC filings).
 Privacy architecture:
 - investor_profiles = PUBLIC (SEC filings, read-only)
 - user_investor_profiles = PRIVATE (E2E encrypted, consent required)
+
+Canonical attach point:
+    api.routes.investors.get_investor_stats -> GET /api/investors/stats
+
+Route order note: /stats MUST be declared before /{investor_id} so FastAPI
+does not capture the literal string "stats" as an integer investor_id (which
+would return 422 for every /stats request).
 """
 
 import json
@@ -19,9 +26,10 @@ import re
 from datetime import datetime
 from typing import List, Optional
 
-from fastapi import APIRouter, Body, HTTPException, Path, Query
+from fastapi import APIRouter, Body, Depends, HTTPException, Path, Query
 from pydantic import BaseModel, Field
 
+from api.middleware import require_firebase_auth
 from hushh_mcp.services.investor_db import InvestorDBService
 
 logger = logging.getLogger(__name__)
@@ -125,6 +133,16 @@ async def search_investors(
     return results
 
 
+@router.get("/stats")
+async def get_investor_stats():
+    """Get statistics about investor profiles."""
+    # Use service layer
+    service = InvestorDBService()
+    stats = await service.get_investor_stats()
+
+    return {"total_profiles": stats.get("total", 0), "by_type": stats.get("by_type", {})}
+
+
 @router.get("/{investor_id}", response_model=InvestorProfile)
 async def get_investor(investor_id: int):
     """
@@ -173,11 +191,15 @@ async def get_investor_by_cik(
 
 
 @router.post("/", status_code=201)
-async def create_investor(investor: InvestorCreateRequest):
+async def create_investor(
+    investor: InvestorCreateRequest,
+    firebase_uid: str = Depends(require_firebase_auth),
+):
     """
     Create or update an investor profile.
 
     Admin endpoint for data ingestion from SEC EDGAR, etc.
+    Requires Firebase authentication.
     """
 
     # Use service layer
@@ -235,6 +257,7 @@ async def create_investor(investor: InvestorCreateRequest):
 @router.post("/bulk", status_code=201)
 async def bulk_create_investors(
     investors: List[InvestorCreateRequest] = Body(...),
+    firebase_uid: str = Depends(require_firebase_auth),
 ):
     """
     Bulk create investor profiles from list.
@@ -242,6 +265,7 @@ async def bulk_create_investors(
     Used for initial data seeding from JSON file.
     Capped at _BULK_INVESTOR_MAX records per request to protect the
     database connection pool.
+    Requires Firebase authentication.
     """
     if len(investors) > _BULK_INVESTOR_MAX:
         raise HTTPException(
@@ -258,13 +282,3 @@ async def bulk_create_investors(
     logger.info(f"Bulk created {len(results)} investor profiles")
 
     return {"created": len(results), "profiles": results}
-
-
-@router.get("/stats")
-async def get_stats():
-    """Get statistics about investor profiles."""
-    # Use service layer
-    service = InvestorDBService()
-    stats = await service.get_investor_stats()
-
-    return {"total_profiles": stats.get("total", 0), "by_type": stats.get("by_type", {})}
