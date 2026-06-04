@@ -275,4 +275,3 @@ async def bulk_create_investors(
     logger.info(f"Bulk created {len(results)} investor profiles")
 
     return {"created": len(results), "profiles": results}
-
