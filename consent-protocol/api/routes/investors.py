@@ -259,7 +259,7 @@ async def bulk_create_investors(
 
     results = []
     for investor in investors:
-        result = await create_investor(investor)
+        result = await create_investor(investor, firebase_uid=firebase_uid)
         results.append(result)
 
     logger.info("Bulk created %d investor profiles", len(results))
