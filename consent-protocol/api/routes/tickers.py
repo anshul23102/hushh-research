@@ -2,12 +2,15 @@
 Ticker search routes (public)
 
 GET /api/tickers/search?q=...&limit=10
+
+Canonical attach point: api.routes.tickers.all_tickers -> GET /api/tickers/all
 """
 
 import logging
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query
+from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
 
 from api.middleware import require_vault_owner_token
@@ -54,7 +57,9 @@ async def all_tickers(refresh: bool = Query(False)):
     try:
         if refresh or not ticker_cache.loaded:
             # Reload on demand (after metadata enrichment), otherwise load once per process.
-            ticker_cache.load_from_db()
+            # load_from_db is a synchronous DB call; run it in a thread pool to
+            # avoid blocking the async event loop during the potentially long query.
+            await run_in_threadpool(ticker_cache.load_from_db)
 
         return ticker_cache.all()
     except Exception:
