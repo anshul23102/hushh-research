@@ -34,9 +34,11 @@ from pydantic import ValidationError
 from api.routes.kai.support import SupportMessageRequest
 from api.routes.kai.voice import (
     VoiceCapabilityRequest,
+    VoiceClarificationPayload,
     VoiceComposeRequest,
     VoicePlanRequest,
     VoiceRealtimeSessionRequest,
+    VoiceResponsePayload,
     VoiceTTSRequest,
 )
 
@@ -283,6 +285,61 @@ class TestSupportMessageRequest:
     def test_message_too_long_raises(self):
         with pytest.raises(ValidationError):
             SupportMessageRequest(**self._valid(message="m" * 8001))
+
+
+# ---------------------------------------------------------------------------
+# Response-payload bounds (defense in depth on UNTRUSTED LLM/orchestrator output)
+# ---------------------------------------------------------------------------
+# VoiceResponsePayload(**response_payload) and
+# VoiceClarificationPayload(**response_payload["clarification"]) are built in
+# api.routes.kai.voice from model/orchestrator output (kai_voice_plan). The
+# upper bounds below ensure an LLM that emits an oversized field cannot push
+# unbounded text downstream into the compose pipeline, TTS, or the client.
+# These tests would FAIL if the max_length guards were removed again.
+
+
+class TestVoiceResponsePayloadBounds:
+    def test_valid_passes(self):
+        p = VoiceResponsePayload(kind="reply", message="Hi")
+        assert p.kind == "reply"
+
+    def test_kind_too_long_raises(self):
+        with pytest.raises(ValidationError):
+            VoiceResponsePayload(kind="k" * 65, message="Hi")
+
+    def test_message_too_long_raises(self):
+        with pytest.raises(ValidationError):
+            VoiceResponsePayload(kind="reply", message="m" * 4097)
+
+    def test_message_at_max_passes(self):
+        p = VoiceResponsePayload(kind="reply", message="m" * 4096)
+        assert len(p.message) == 4096
+
+    def test_reason_too_long_raises(self):
+        with pytest.raises(ValidationError):
+            VoiceResponsePayload(kind="reply", message="Hi", reason="r" * 257)
+
+    def test_ticker_too_long_raises(self):
+        with pytest.raises(ValidationError):
+            VoiceResponsePayload(kind="reply", message="Hi", ticker="T" * 11)
+
+
+class TestVoiceClarificationPayloadBounds:
+    def test_valid_passes(self):
+        p = VoiceClarificationPayload(reason="need info", question="Which one?")
+        assert p.question == "Which one?"
+
+    def test_reason_too_long_raises(self):
+        with pytest.raises(ValidationError):
+            VoiceClarificationPayload(reason="r" * 257, question="Which one?")
+
+    def test_question_too_long_raises(self):
+        with pytest.raises(ValidationError):
+            VoiceClarificationPayload(reason="need info", question="q" * 513)
+
+    def test_options_over_cap_raises(self):
+        with pytest.raises(ValidationError):
+            VoiceClarificationPayload(reason="need info", question="Which one?", options=["o"] * 21)
 
 
 # ===========================================================================
