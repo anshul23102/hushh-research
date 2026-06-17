@@ -21,7 +21,7 @@ import os
 import re
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from api.middleware import require_firebase_auth, verify_user_id_match
 from hushh_mcp.consent.token import validate_token_with_db
@@ -128,9 +128,10 @@ async def require_vault_owner_consent_header(
 
     valid, reason, token_obj = await validate_token_with_db(token, ConsentScope.VAULT_OWNER)
     if not valid or token_obj is None:
+        logger.warning("db_proxy.token_invalid reason=%s", reason)
         raise HTTPException(
             status_code=401,
-            detail=f"Invalid token: {reason}",
+            detail="Invalid or expired consent token.",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
@@ -150,7 +151,7 @@ async def require_vault_owner_consent_header(
 
 
 class VaultCheckRequest(BaseModel):
-    userId: str
+    userId: str = Field(..., min_length=1, max_length=128)
 
 
 class VaultCheckResponse(BaseModel):
@@ -158,7 +159,7 @@ class VaultCheckResponse(BaseModel):
 
 
 class VaultBootstrapStateRequest(BaseModel):
-    userId: str | None = None
+    userId: str | None = Field(default=None, max_length=128)
 
 
 class VaultBootstrapStateResponse(BaseModel):
@@ -177,7 +178,7 @@ class VaultBootstrapStateResponse(BaseModel):
 
 
 class VaultPreStateUpdateRequest(BaseModel):
-    userId: str | None = None
+    userId: str | None = Field(default=None, max_length=128)
     preOnboardingCompleted: bool | None = None
     preOnboardingSkipped: bool | None = None
     preOnboardingCompletedAt: int | None = None
@@ -186,7 +187,7 @@ class VaultPreStateUpdateRequest(BaseModel):
 
 
 class VaultGetRequest(BaseModel):
-    userId: str
+    userId: str = Field(..., min_length=1, max_length=128)
 
 
 class VaultWrapperData(BaseModel):
@@ -214,7 +215,7 @@ class VaultStateData(BaseModel):
 
 
 class VaultSetupStateRequest(BaseModel):
-    userId: str
+    userId: str = Field(..., min_length=1, max_length=128)
     vaultKeyHash: str
     primaryMethod: str
     primaryWrapperId: str | None = None
@@ -225,7 +226,7 @@ class VaultSetupStateRequest(BaseModel):
 
 
 class VaultWrapperUpsertRequest(BaseModel):
-    userId: str
+    userId: str = Field(..., min_length=1, max_length=128)
     vaultKeyHash: str
     method: str
     wrapperId: str | None = None
@@ -241,7 +242,7 @@ class VaultWrapperUpsertRequest(BaseModel):
 
 
 class VaultWrapperDeleteRequest(BaseModel):
-    userId: str
+    userId: str = Field(..., min_length=1, max_length=128)
     vaultKeyHash: str
     method: str
     wrapperId: str | None = None
@@ -250,7 +251,7 @@ class VaultWrapperDeleteRequest(BaseModel):
 
 
 class VaultPrimaryMethodSetRequest(BaseModel):
-    userId: str
+    userId: str = Field(..., min_length=1, max_length=128)
     primaryMethod: str
     primaryWrapperId: str | None = None
 
@@ -725,10 +726,10 @@ async def validate_vault_owner_token(consent_token: str, user_id: str) -> None:
     valid, reason, token_obj = await validate_token_with_db(consent_token, ConsentScope.VAULT_OWNER)
 
     if not valid:
-        logger.warning(f"Invalid consent token: {reason}")
+        logger.warning("db_proxy.validate_vault_owner_token.invalid reason=%s", reason)
         raise HTTPException(
             status_code=401,
-            detail=f"Invalid consent token: {reason}",
+            detail="Invalid or expired consent token.",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
