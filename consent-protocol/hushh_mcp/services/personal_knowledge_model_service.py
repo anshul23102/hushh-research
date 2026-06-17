@@ -182,6 +182,7 @@ class PersonalKnowledgeModelService:
         self._domain_registry = None
         self._scope_generator = None
         self._blob_upsert_rpc_supported: Optional[bool] = None
+        self._background_reconcile_tasks: set[asyncio.Task] = set()
 
     _SUMMARY_BLOCKLIST = {"holdings", "total_value", "vault_key", "password"}
     _FINANCIAL_ENRICHMENT_INT_KEYS = {"investable_positions_count", "cash_positions_count"}
@@ -1299,10 +1300,8 @@ class PersonalKnowledgeModelService:
             logger.debug("Skipping background reconcile schedule for %s; no active loop", user_id)
             return
         task = loop.create_task(self.reconcile_user_index_domains(user_id))
-        # Retain a strong reference until completion so the loop does not garbage
-        # collect this self-heal task mid-execution.
-        _index_reconcile_tasks.add(task)
-        task.add_done_callback(_index_reconcile_tasks.discard)
+        self._background_reconcile_tasks.add(task)
+        task.add_done_callback(self._background_reconcile_tasks.discard)
 
     async def resolve_metadata_index(
         self,
@@ -3446,13 +3445,6 @@ class PersonalKnowledgeModelService:
 
 # Singleton instance
 _pkm_service: Optional[PersonalKnowledgeModelService] = None
-
-# Strong references to in-flight background index reconcile tasks.
-# asyncio only keeps weak references to tasks created with create_task, so a
-# task that is not referenced elsewhere can be garbage collected before it
-# finishes. Holding the task here until its done callback fires keeps the
-# self-heal reconcile alive for its full duration.
-_index_reconcile_tasks: set[asyncio.Task] = set()
 
 
 def get_pkm_service() -> PersonalKnowledgeModelService:
