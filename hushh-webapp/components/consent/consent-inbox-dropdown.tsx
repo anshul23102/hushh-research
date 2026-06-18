@@ -73,14 +73,14 @@ function formatRelative(value?: string | number | null) {
   return `${Math.ceil(totalHours / 24)} days left`;
 }
 
-function entryHref(actor: ConsentCenterActor, entry: ConsentCenterEntry) {
+function entryHref(actor: ConsentCenterActor, entry: ConsentCenterEntry): string {
   const requestId = entry.request_id || entry.id;
   return actor === "ria"
     ? buildRiaConsentManagerHref("pending", { requestId })
     : buildConsentCenterHref("pending", { actor: "investor", requestId });
 }
 
-function managerHref(actor: ConsentCenterActor) {
+function managerHref(actor: ConsentCenterActor): string {
   return actor === "ria"
     ? buildRiaConsentManagerHref("pending")
     : buildConsentCenterHref("pending", { actor: "investor" });
@@ -268,10 +268,10 @@ export function ConsentInboxDropdown({
           ) : null}
 
           {items.length > 0 ? (
-            <div className="divide-y divide-border/45">
+            <div role="list" aria-label="Pending consents" className="divide-y divide-border/45">
               {items.map((entry) => (
-                <Link
-                  key={entry.id}
+                <div key={entry.id} role="listitem">
+                  <Link
                   href={entryHref(actor, entry)}
                   prefetch={false}
                   onClick={() => setOpen(false)}
@@ -294,6 +294,7 @@ export function ConsentInboxDropdown({
                     </span>
                   </div>
                 </Link>
+              </div>
               ))}
             </div>
           ) : null}

@@ -358,7 +358,7 @@ export function KaiNavTour() {
 
   const cardStyle = (() => {
     const isBottomNavStep = activeStep.id.startsWith("nav-");
-    const viewportWidth = anchor?.viewportWidth ?? (typeof window !== "undefined" ? window.innerWidth : 430);
+    const viewportWidth = anchor?.viewportWidth ?? 430;
     const margin = 12;
     const cardWidth = Math.min(480, viewportWidth - margin * 2);
 
@@ -428,7 +428,7 @@ export function KaiNavTour() {
             </div>
 
             <div className="space-y-1">
-              <h3 className="text-base font-black">{activeStep.title}</h3>
+              <h3 className="text-base font-semibold">{activeStep.title}</h3>
               <p className="text-sm text-muted-foreground">{activeStep.description}</p>
             </div>
 

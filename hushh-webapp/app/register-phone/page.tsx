@@ -1,6 +1,7 @@
 "use client";
 
-import { type CSSProperties, Suspense, useCallback, useEffect } from "react";
+import Image from "next/image";
+import { type CSSProperties, Suspense, useCallback, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 import { FullscreenFlowShell } from "@/components/app-ui/fullscreen-flow-shell";
@@ -8,6 +9,10 @@ import { HushhLoader } from "@/components/app-ui/hushh-loader";
 import { NativeRouteMarker } from "@/components/app-ui/native-route-marker";
 import { PhoneVerificationFlow } from "@/components/auth/phone-verification-flow";
 import { VaultLockGuard } from "@/components/vault/vault-lock-guard";
+import {
+  kaiAppBodyClassName,
+  kaiAppCompactTitleClassName,
+} from "@/components/kai/shared/kai-typography";
 import { useAuth } from "@/lib/firebase/auth-context";
 import { ROUTES } from "@/lib/navigation/routes";
 import { AccountIdentityService } from "@/lib/services/account-identity-service";
@@ -17,9 +22,14 @@ import { shouldBypassPhoneMandateForLocalhost } from "@/lib/services/phone-manda
 const FLOW_SHELL_STYLE = {
   "--page-top-local-offset": "0px",
   "--phone-mandate-safe-pt":
-    "calc(var(--app-safe-area-top-effective, env(safe-area-inset-top, 0px)) + clamp(1.25rem, 4vh, 3rem))",
+    "max(5.75rem, calc(var(--app-safe-area-top-effective, env(safe-area-inset-top, 0px)) + 2rem))",
   "--phone-mandate-safe-pb":
     "calc(var(--app-safe-area-bottom-effective, env(safe-area-inset-bottom, 0px)) + 2.5rem)",
+  minHeight: "100dvh",
+  paddingTop: "var(--phone-mandate-safe-pt)",
+  paddingBottom: "var(--phone-mandate-safe-pb)",
+  paddingLeft: "clamp(1.25rem, 5vw, 2rem)",
+  paddingRight: "clamp(1.25rem, 5vw, 2rem)",
 } as CSSProperties;
 
 function requiresVaultUnlockForRedirect(path?: string | null): boolean {
@@ -87,12 +97,15 @@ function PhoneMandatePageContent() {
     [redirectPath, refreshUser, router, user]
   );
 
-  const shouldBypassLocalPhoneMandate =
-    !loading &&
-    Boolean(user) &&
-    !phoneNumber &&
-    typeof window !== "undefined" &&
-    shouldBypassPhoneMandateForLocalhost(window.location.hostname);
+  const [shouldBypassLocalPhoneMandate, setShouldBypassLocalPhoneMandate] = useState(false);
+
+  useEffect(() => {
+    if (!loading && Boolean(user) && !phoneNumber) {
+      if (typeof window !== "undefined" && shouldBypassPhoneMandateForLocalhost(window.location.hostname)) {
+        setShouldBypassLocalPhoneMandate(true);
+      }
+    }
+  }, [loading, user, phoneNumber]);
 
   useEffect(() => {
     if (!shouldBypassLocalPhoneMandate || !user) {
@@ -122,15 +135,30 @@ function PhoneMandatePageContent() {
         authState="authenticated"
         dataState="loaded"
       />
-      <div className="mx-auto w-full max-w-[28rem]">
-        <div className="space-y-3">
-          <h1 className="max-w-[18rem] text-[clamp(2.5rem,9vw,3.5rem)] font-black leading-[0.94] tracking-tight text-foreground">
+      <div className="mx-auto w-full max-w-[27rem]">
+        <header className="flex-none text-center">
+          <Image
+            src="/one-quiet-emoji.png"
+            alt=""
+            width={48}
+            height={48}
+            priority
+            aria-hidden="true"
+            draggable={false}
+            className="mx-auto h-12 w-12 select-none object-contain drop-shadow-[0_14px_28px_rgba(0,0,0,0.08)]"
+          />
+          <div
+            role="heading"
+            aria-level={1}
+            aria-label="Verify your phone number"
+            className={`mt-2.5 ${kaiAppCompactTitleClassName} text-[#1d1d1f] dark:text-[#f5f5f7]`}
+          >
             Verify your phone number
-          </h1>
-          <p className="max-w-sm text-[15px] leading-7 text-muted-foreground">
+          </div>
+          <p className={`mx-auto mt-2.5 max-w-[20rem] ${kaiAppBodyClassName} text-[rgba(0,0,0,0.56)] dark:text-[rgba(245,245,247,0.60)]`}>
             Add your phone number to continue.
           </p>
-        </div>
+        </header>
         <PhoneVerificationFlow
           mode="link"
           currentPhoneNumber={phoneNumber}
@@ -139,7 +167,7 @@ function PhoneMandatePageContent() {
           onCompleted={continueToNextRoute}
           onContinueExisting={continueToNextRoute}
           confirmLabel="Verify and continue"
-          className="mt-8 gap-5"
+          className="mt-8 min-h-[24rem] gap-5"
         />
 
         <div id="recaptcha-container" className="mt-6 min-h-0" />
