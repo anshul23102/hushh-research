@@ -4259,11 +4259,15 @@ class PKMAgentLabService:
         strict_small_model: bool = False,
         domain_registry_override: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
-        # SECURITY: redact high-risk keys and validate output shape before the
-        # simulated_state dict reaches any LLM prompt.  SummaryReducerAgent runs
-        # only the deterministic layers (no LLM call), so this is zero-latency.
+        # SECURITY: redact high-risk keys before simulated_state reaches any LLM
+        # prompt.  sanitize_input applies the same pre-processing layer as reduce()
+        # but preserves the original schema (domains/memories keys) so that the
+        # deterministic fallback scorer can still walk the memory graph without an
+        # LLM response.  Replacing the entire dict with a SummaryProjection would
+        # strip those structural keys and cause all fallback merge decisions to
+        # default to create_entity / no_op.
         if simulated_state is not None:
-            simulated_state = SummaryReducerAgent().reduce("simulated_state", simulated_state, run_llm=False).model_dump()
+            simulated_state = SummaryReducerAgent().sanitize_input(simulated_state)
 
         total_started_at = time.perf_counter()
         normalized_domains = [

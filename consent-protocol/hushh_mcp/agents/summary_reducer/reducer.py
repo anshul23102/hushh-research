@@ -267,6 +267,16 @@ class SummaryReducerAgent:
 
         return SummaryProjection(**clean_projection)
 
+    def sanitize_input(self, data: Any) -> Any:
+        """Redact high-risk keys recursively without changing the data schema.
+
+        Unlike ``reduce()``, this method preserves the original structure so
+        that callers can safely pass the result to both LLM prompts and
+        deterministic logic that depends on the shape of the input (e.g. a
+        ``memories`` list or ``domains`` array).
+        """
+        return _pre_process_data(data)
+
     # ------------------------------------------------------------------
     # Internal: deterministic projection builder
     # ------------------------------------------------------------------
