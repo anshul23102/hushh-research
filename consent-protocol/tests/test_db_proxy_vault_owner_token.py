@@ -92,6 +92,35 @@ def test_vault_wrapper_delete_requires_vault_owner_unlock_proof_with_firebase_au
     assert response.json()["detail"] == "Missing X-Hushh-Consent header"
 
 
+@pytest.mark.asyncio
+async def test_validate_vault_owner_token_insufficient_scope_returns_opaque_403(monkeypatch):
+    """Proves scope disclosure suppression (CWE-209) via opaque 403 error.
+
+    Canonical route: POST /db/vault/wrapper/delete (requires VAULT_OWNER scope)
+    """
+    async def _validate_token_with_db(token: str, scope: ConsentScope):
+        # Token has different scope (e.g., PORTFOLIO_READ instead of VAULT_OWNER)
+        return (
+            True,
+            None,
+            SimpleNamespace(
+                user_id="user_123",
+                scope=ConsentScope.PORTFOLIO_READ,  # Insufficient scope
+            ),
+        )
+
+    monkeypatch.setattr(db_proxy, "validate_token_with_db", _validate_token_with_db)
+
+    with pytest.raises(HTTPException) as exc:
+        await db_proxy.validate_vault_owner_token("consent-token", "user_123")
+
+    assert exc.value.status_code == 403
+    # Error message is opaque (does not expose actual scope value)
+    assert exc.value.detail == "Insufficient permissions."
+    assert "PORTFOLIO_READ" not in exc.value.detail
+    assert "scope" not in exc.value.detail.lower()
+
+
 def test_database_http_exception_helper_returns_generic_500_for_unknown_errors():
     with pytest.raises(HTTPException) as exc:
         db_proxy._raise_database_http_exception(RuntimeError("unexpected database error"))
