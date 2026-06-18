@@ -498,3 +498,78 @@ class TestSendSupportMessageRouteInputBounds:
         """message > 8000 chars must be rejected with 422."""
         resp = _support_client().post(self._URL, json=self._valid_body(message="m" * 8001))
         assert resp.status_code == 422
+
+
+# ---------------------------------------------------------------------------
+# Response-model output bounds (maintainer patch — defense in depth)
+# ---------------------------------------------------------------------------
+# VoiceComposeResponse, VoiceCapabilityResponse, and VoiceRealtimeSessionResponse
+# are server-constructed but must keep upper bounds so an oversized/malformed
+# field (model output, an ephemeral OpenAI client_secret, a rollout reason)
+# cannot be surfaced to the client unchecked. These tests FAIL if the
+# max_length / ge / le guards are removed again, locking the trust boundary.
+
+
+class TestVoiceResponseModelBounds:
+    def test_compose_response_text_over_max_raises(self):
+        from api.routes.kai.voice import VoiceComposeResponse
+
+        with pytest.raises(ValidationError):
+            VoiceComposeResponse(
+                text="t" * 4097,
+                segment_type="final",
+                elapsed_ms=1,
+                openai_http_ms=1,
+                model="gpt-4o",
+            )
+
+    def test_compose_response_negative_elapsed_raises(self):
+        from api.routes.kai.voice import VoiceComposeResponse
+
+        with pytest.raises(ValidationError):
+            VoiceComposeResponse(
+                text="ok",
+                segment_type="final",
+                elapsed_ms=-1,
+                openai_http_ms=1,
+                model="gpt-4o",
+            )
+
+    def test_capability_response_canary_over_100_raises(self):
+        from api.routes.kai.voice import VoiceCapabilityResponse
+
+        with pytest.raises(ValidationError):
+            VoiceCapabilityResponse(
+                user_id="u1",
+                enabled=True,
+                voice_enabled=True,
+                execution_allowed=True,
+                tool_execution_disabled=False,
+                rollout_reason="canary",
+                canary_percent=101,
+                tts_timeout_ms=1000,
+                tts_model="tts-1",
+                tts_voice="alloy",
+                tts_format="mp3",
+            )
+
+    def test_realtime_response_client_secret_over_max_raises(self):
+        from api.routes.kai.voice import VoiceRealtimeSessionResponse
+
+        with pytest.raises(ValidationError):
+            VoiceRealtimeSessionResponse(
+                client_secret="s" * 513,
+                model="gpt-4o-realtime",
+                voice="alloy",
+            )
+
+    def test_realtime_response_valid_passes(self):
+        from api.routes.kai.voice import VoiceRealtimeSessionResponse
+
+        token_value = "ek_" + ("x" * 16)  # synthetic ephemeral token, not a real secret
+        r = VoiceRealtimeSessionResponse(
+            client_secret=token_value,
+            model="gpt-4o-realtime",
+            voice="alloy",
+        )
+        assert r.client_secret == token_value
