@@ -28,9 +28,9 @@ def client() -> TestClient:
 
 
 def test_vault_status_reachable(client: TestClient) -> None:
-    """POST /vault/status must reach the handler (not 404/405)."""
+    """POST /db/vault/status must reach the handler (not 404/405)."""
     resp = client.post(
-        "/vault/status",
+        "/db/vault/status",
         json={"userId": VALID_UID, "consentToken": "invalid-token"},
     )
     assert resp.status_code in {200, 400, 401, 403, 422, 500, 503}
@@ -39,7 +39,7 @@ def test_vault_status_reachable(client: TestClient) -> None:
 def test_vault_status_bad_token_returns_opaque_detail(client: TestClient) -> None:
     """A bad consent token must produce a 401 with an opaque, static message."""
     resp = client.post(
-        "/vault/status",
+        "/db/vault/status",
         json={"userId": VALID_UID, "consentToken": "bad-token"},
     )
     if resp.status_code == 401:
@@ -52,7 +52,7 @@ def test_vault_status_bad_token_returns_opaque_detail(client: TestClient) -> Non
 def test_vault_status_does_not_leak_exception_text(client: TestClient) -> None:
     """The 500 response must not contain raw exception strings."""
     resp = client.post(
-        "/vault/status",
+        "/db/vault/status",
         json={"userId": VALID_UID, "consentToken": "invalid"},
     )
     if resp.status_code == 500:
