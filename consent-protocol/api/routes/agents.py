@@ -31,14 +31,14 @@ router = APIRouter(prefix="/api", tags=["Agents"])
 @router.post("/validate-token")
 async def validate_token_endpoint(request: ValidateTokenRequest):
     """
-    Validate a consent token.
+    Validate a consent token with DB-backed revocation check.
     Used by frontend to verify tokens before performing privileged actions.
     """
-    from hushh_mcp.consent.token import validate_token
+    from hushh_mcp.consent.token import validate_token_with_db
 
     try:
-        # Validate signature and expiration
-        valid, reason, token_obj = validate_token(request.token)
+        # Validate signature, expiration, and check revocation db
+        valid, reason, token_obj = await validate_token_with_db(request.token)
 
         if not valid:
             # SECURITY: Return generic message, log detailed reason server-side
