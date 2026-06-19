@@ -32,14 +32,14 @@ def client() -> TestClient:
 
 def test_metadata_endpoint_reachable(client: TestClient) -> None:
     """GET /api/pkm/metadata/{user_id} must reach the handler (not 404/405)."""
-    resp = client.get(f"/metadata/{VALID_UID}")
+    resp = client.get(f"/api/pkm/metadata/{VALID_UID}")
     # Handler may fail due to missing DB; we only assert the route resolves.
     assert resp.status_code in {200, 500, 503}
 
 
 def test_metadata_endpoint_wrong_user_is_403(client: TestClient) -> None:
     """Token user_id mismatch must produce 403."""
-    resp = client.get("/metadata/other-uid")
+    resp = client.get("/api/pkm/metadata/other-uid")
     assert resp.status_code == 403
 
 
