@@ -1097,7 +1097,8 @@ async def analyze_portfolio_losers_stream(
 
         except asyncio.TimeoutError:
             logger.warning(
-                f"[Losers Analysis] Hard timeout ({HARD_TIMEOUT_SECONDS}s) reached, stopping LLM"
+                "losers.analyze_stream.timeout: %s",
+                HARD_TIMEOUT_SECONDS,
             )
             yield stream.event(
                 "error",
