@@ -12,6 +12,7 @@ from __future__ import annotations
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from api.middleware import require_vault_owner_token
 from api.routes.pkm import router as pkm_router
 from api.routes.world_model import router as world_model_router
 
@@ -19,16 +20,28 @@ app = FastAPI()
 app.include_router(pkm_router)
 app.include_router(world_model_router)
 
-client = TestClient(app)
-
 _TEST_USER_ID = "test-user-12345"
 _TEST_DOMAIN = "financial"
-_BEARER_VALUE = "test-vault-owner-token"  # noqa: S105 - not a real credential, used for routing tests
 
 
-def _headers() -> dict:
-    """Build authorization headers for VAULT_OWNER token."""
-    return {"Authorization": f"Bearer {_BEARER_VALUE}"}
+def _mock_token_data() -> dict:
+    """Return mock token data for successful auth."""
+    return {
+        "user_id": _TEST_USER_ID,
+        "agent_id": "test_agent",
+        "scope": "vault.owner",
+        "token": "test-token",
+        "token_obj": None,
+    }
+
+
+def _override_auth():
+    """Dependency override for token validation."""
+    return _mock_token_data()
+
+
+app.dependency_overrides[require_vault_owner_token] = _override_auth
+client = TestClient(app)
 
 
 class TestPKMSegmentIdsBounds:
@@ -42,7 +55,6 @@ class TestPKMSegmentIdsBounds:
         response = client.get(
             f"/api/pkm/domain-data/{_TEST_USER_ID}/{_TEST_DOMAIN}",
             params=params,
-            headers=_headers(),
         )
 
         assert response.status_code in (401, 403, 404, 500), (
@@ -57,7 +69,6 @@ class TestPKMSegmentIdsBounds:
         response = client.get(
             f"/api/pkm/domain-data/{_TEST_USER_ID}/{_TEST_DOMAIN}",
             params=params,
-            headers=_headers(),
         )
 
         assert response.status_code != 422, (
@@ -72,7 +83,6 @@ class TestPKMSegmentIdsBounds:
         response = client.get(
             f"/api/pkm/domain-data/{_TEST_USER_ID}/{_TEST_DOMAIN}",
             params=params,
-            headers=_headers(),
         )
 
         assert response.status_code == 422, (
@@ -87,7 +97,6 @@ class TestPKMSegmentIdsBounds:
         response = client.get(
             f"/api/pkm/domain-data/{_TEST_USER_ID}/{_TEST_DOMAIN}",
             params=params,
-            headers=_headers(),
         )
 
         assert response.status_code == 422, (
@@ -106,7 +115,6 @@ class TestWorldModelSegmentIdsBounds:
         response = client.get(
             f"/api/world-model/domain-data/{_TEST_USER_ID}/{_TEST_DOMAIN}",
             params=params,
-            headers=_headers(),
         )
 
         assert response.status_code in (401, 403, 404, 500), (
@@ -121,7 +129,6 @@ class TestWorldModelSegmentIdsBounds:
         response = client.get(
             f"/api/world-model/domain-data/{_TEST_USER_ID}/{_TEST_DOMAIN}",
             params=params,
-            headers=_headers(),
         )
 
         assert response.status_code == 422, (
