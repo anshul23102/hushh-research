@@ -26,16 +26,16 @@ def client() -> TestClient:
 
 
 def test_vault_check_endpoint_reachable(client: TestClient) -> None:
-    """POST /vault/check must reach the handler (not 404/405)."""
-    resp = client.post("/vault/check", json={"userId": VALID_UID})
+    """POST /db/vault/check must reach the handler (not 404/405)."""
+    resp = client.post("/db/vault/check", json={"userId": VALID_UID})
     # May fail due to missing DB; we only assert the route resolves.
     assert resp.status_code in {200, 400, 422, 500, 503}
 
 
 def test_vault_status_endpoint_reachable(client: TestClient) -> None:
-    """POST /vault/status must reach the handler (not 404/405)."""
+    """POST /db/vault/status must reach the handler (not 404/405)."""
     resp = client.post(
-        "/vault/status",
+        "/db/vault/status",
         json={"userId": VALID_UID, "consentToken": "fake-token"},
     )
     assert resp.status_code in {200, 400, 401, 403, 422, 500, 503}
