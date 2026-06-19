@@ -11,6 +11,8 @@ The data here is NOT encrypted (it's all from public SEC filings).
 Privacy architecture:
 - investor_profiles = PUBLIC (SEC filings, read-only)
 - user_investor_profiles = PRIVATE (E2E encrypted, consent required)
+
+Canonical attach point: api.routes.investors.bulk_create_investors -> POST /api/investors/bulk
 """
 
 import json
@@ -250,14 +252,53 @@ async def bulk_create_investors(
             f"got {len(investors)}.",
         )
 
-    results = []
+    service = InvestorDBService()
+    now_iso = datetime.now().isoformat()
+
+    records = []
     for investor in investors:
-        result = await create_investor(investor)
-        results.append(result)
+        name_normalized = re.sub(r"\s+", "", investor.name.lower())
+        data = {
+            "name": investor.name,
+            "name_normalized": name_normalized,
+            "cik": investor.cik,
+            "firm": investor.firm,
+            "title": investor.title,
+            "investor_type": investor.investor_type or "fund_manager",
+            "aum_billions": investor.aum_billions,
+            "top_holdings": json.dumps(investor.top_holdings) if investor.top_holdings else None,
+            "sector_exposure": json.dumps(investor.sector_exposure)
+            if investor.sector_exposure
+            else None,
+            "investment_style": investor.investment_style,
+            "risk_tolerance": investor.risk_tolerance,
+            "time_horizon": investor.time_horizon,
+            "portfolio_turnover": investor.portfolio_turnover,
+            "recent_buys": investor.recent_buys,
+            "recent_sells": investor.recent_sells,
+            "public_quotes": json.dumps(investor.public_quotes) if investor.public_quotes else None,
+            "biography": investor.biography,
+            "education": investor.education,
+            "board_memberships": investor.board_memberships,
+            "peer_investors": investor.peer_investors,
+            "is_insider": investor.is_insider or False,
+            "insider_company_ticker": investor.insider_company_ticker,
+            "updated_at": now_iso,
+        }
+        records.append({k: v for k, v in data.items() if v is not None})
 
-    logger.info(f"Bulk created {len(results)} investor profiles")
+    try:
+        upserted = await service.bulk_upsert(records)
+    except Exception as e:
+        logger.error(f"Bulk upsert failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
-    return {"created": len(results), "profiles": results}
+    logger.info(f"Bulk created {len(upserted)} investor profiles")
+
+    profiles = [
+        {"id": row.get("id"), "name": row.get("name"), "status": "created"} for row in upserted
+    ]
+    return {"created": len(upserted), "profiles": profiles}
 
 
 @router.get("/stats")

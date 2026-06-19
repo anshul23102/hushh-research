@@ -302,6 +302,40 @@ class InvestorDBService:
 
         return {"total": total, "by_type": by_type}
 
+    async def bulk_upsert(
+        self,
+        records: List[Dict[str, Any]],
+        upsert_key: str = "cik",
+    ) -> List[Dict[str, Any]]:
+        """
+        Insert or update multiple investor profiles in a single DB round-trip.
+
+        Uses Supabase's .upsert() which accepts a list, eliminating the N
+        sequential round-trips produced by calling upsert_investor() in a loop.
+
+        Args:
+            records: List of investor data dictionaries.
+            upsert_key: Column to use for conflict detection.
+
+        Returns:
+            List of created/updated investor records.
+        """
+        if not records:
+            return []
+
+        supabase = self._get_supabase()
+
+        try:
+            response = (
+                supabase.table("investor_profiles")
+                .upsert(records, on_conflict=upsert_key)
+                .execute()
+            )
+            return response.data or []
+        except Exception as e:
+            logger.error(f"Error bulk-upserting investors: {e}")
+            raise
+
     async def upsert_investor(
         self, data: Dict[str, Any], upsert_key: Optional[str] = "cik"
     ) -> Dict[str, Any]:
