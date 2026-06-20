@@ -19,16 +19,24 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from api.middleware import require_firebase_auth, require_vault_owner_token
+from api.routes import investors, invites, tickers
 
 _FIREBASE_UID = "test-uid-path"
 
 
 @pytest.fixture()
 def client():
-    from api.main import app
+    # Mount the three routers under test directly, each with its own
+    # declared prefix (/api/invites, /api/tickers, /api/investors), instead
+    # of importing the full server.py app, which requires live DB/env setup.
+    app = FastAPI()
+    app.include_router(invites.router)
+    app.include_router(tickers.router)
+    app.include_router(investors.router)
 
     app.dependency_overrides[require_firebase_auth] = lambda: _FIREBASE_UID
     app.dependency_overrides[require_vault_owner_token] = lambda: {
@@ -46,12 +54,11 @@ def client():
 
 
 def test_get_invite_empty_token_rejected(client: TestClient) -> None:
-    """GET /api/invites/ with empty token segment must return 422."""
-    # FastAPI routes an empty path segment as a missing param / 422
-    resp = client.get("/api/invites/%20")  # single space = effectively empty after strip
-    # FastAPI Path validation rejects strings that fail min_length
-    # A single space string has length 1, so test with truly empty equivalent
-    assert resp.status_code in (404, 422)
+    """GET /api/invites/ with an empty token segment must not reach the handler."""
+    # An empty path segment never matches the {invite_token} route pattern,
+    # so Starlette returns 404 before min_length=1 validation even runs.
+    resp = client.get("/api/invites/")
+    assert resp.status_code == 404
 
 
 def test_get_invite_whitespace_only_rejected(client: TestClient) -> None:
@@ -77,9 +84,9 @@ def test_accept_invite_empty_token_rejected(client: TestClient) -> None:
 def test_sync_holdings_non_empty_user_id_accepted(client: TestClient) -> None:
     """sync-holdings with a valid user_id should not be rejected with 422."""
     mock_service = MagicMock()
-    mock_service.sync_tickers_from_holdings = AsyncMock(return_value={"synced": 0})
+    mock_service.sync_holdings_symbols = AsyncMock(return_value={"synced": 0})
 
-    with patch("api.routes.tickers.TickerService", return_value=mock_service):
+    with patch("api.routes.tickers.TickerDBService", return_value=mock_service):
         resp = client.post(
             f"/api/tickers/sync-holdings/{_FIREBASE_UID}",
             json={"holdings": []},
