@@ -48,6 +48,7 @@ from unittest.mock import AsyncMock, patch
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from api.middleware import require_firebase_auth
 from api.routes import agents as agents_module
 from api.routes import investors as investors_module
 from api.routes import tickers as tickers_module
@@ -179,7 +180,9 @@ class TestCreateInvestorInfoDisclosure:
     """
 
     def _client(self) -> TestClient:
-        return TestClient(_app(investors_module.router), raise_server_exceptions=False)
+        app = _app(investors_module.router)
+        app.dependency_overrides[require_firebase_auth] = lambda: "test_uid_123"
+        return TestClient(app, raise_server_exceptions=False)
 
     _MINIMAL_PAYLOAD = {"name": "Test Investor"}
 
