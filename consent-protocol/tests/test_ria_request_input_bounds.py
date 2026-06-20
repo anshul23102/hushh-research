@@ -74,12 +74,12 @@ def test_verify_name_rejects_oversized_query() -> None:
 
 def test_verify_license_rejects_oversized_number() -> None:
     with pytest.raises(ValidationError):
-        RIAOnboardingVerifyLicenseRequest(license_number="L" * 65)
+        RIAOnboardingVerifyLicenseRequest(license_number="L" * 129)
 
 
 def test_refresh_license_rejects_oversized_number() -> None:
     with pytest.raises(ValidationError):
-        RIAProfileRefreshLicenseRequest(license_number="L" * 65)
+        RIAProfileRefreshLicenseRequest(license_number="L" * 129)
 
 
 # ---------------------------------------------------------------------------
@@ -145,12 +145,12 @@ def test_picks_parse_accepts_valid_csv() -> None:
 
 def test_picks_parse_rejects_oversized_csv() -> None:
     with pytest.raises(ValidationError):
-        RIAPicksParseRequest(csv_content="A" * (2_000_001))
+        RIAPicksParseRequest(csv_content="A" * (5_242_880 + 1))
 
 
 def test_picks_parse_accepts_csv_at_limit() -> None:
-    req = RIAPicksParseRequest(csv_content="A" * 2_000_000)
-    assert len(req.csv_content) == 2_000_000
+    req = RIAPicksParseRequest(csv_content="A" * 5_242_880)
+    assert len(req.csv_content) == 5_242_880
 
 
 # ---------------------------------------------------------------------------
