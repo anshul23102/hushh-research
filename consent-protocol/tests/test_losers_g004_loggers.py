@@ -13,14 +13,19 @@ from fastapi.testclient import TestClient
 
 import api.routes.kai.losers as losers_mod
 from api.middleware import require_vault_owner_token
+from api.routes.kai import router as kai_router
 
 VALID_UID = "test-uid"
 
 
 @pytest.fixture(scope="module")
 def client() -> TestClient:
+    # kai_router is the exact object server.py mounts via
+    # app.include_router(kai_router); it carries the /api/kai prefix that
+    # losers_mod.router alone does not, so hitting it here proves the route
+    # is reachable on the canonical production path.
     app = FastAPI()
-    app.include_router(losers_mod.router)
+    app.include_router(kai_router)
     app.dependency_overrides[require_vault_owner_token] = lambda: {
         "user_id": VALID_UID,
         "token": "fake-token",
@@ -30,12 +35,12 @@ def client() -> TestClient:
 
 
 def test_analyze_losers_endpoint_reachable(client: TestClient) -> None:
-    """POST /portfolio/analyze-losers must reach the handler (not 404/405)."""
+    """POST /api/kai/portfolio/analyze-losers must reach the handler (not 404/405)."""
     payload = {
         "user_id": VALID_UID,
         "holdings": [],
     }
-    resp = client.post("/portfolio/analyze-losers", json=payload)
+    resp = client.post("/api/kai/portfolio/analyze-losers", json=payload)
     # Handler may fail due to missing LLM/DB; we only assert the route resolves.
     assert resp.status_code in {200, 400, 422, 500, 503}
 
