@@ -197,32 +197,35 @@ class TestAnalyzeLosersRequestBounds:
 # Canonical route-level caller proof
 # ===========================================================================
 
-import api.routes.kai.analyze as analyze_module  # noqa: E402
-import api.routes.kai.losers as losers_module  # noqa: E402
 from api.middleware import require_vault_owner_token  # noqa: E402
+from api.routes.kai import router as kai_router  # noqa: E402
+
+# kai_router is the exact router object server.py mounts via
+# app.include_router(kai_router) (see api/routes/kai/__init__.py). Hitting
+# it directly here -- rather than re-mounting the bare analyze/losers
+# sub-router with no prefix -- proves the bounds fire on the canonical
+# production path (/api/kai/analyze, /api/kai/portfolio/analyze-losers),
+# not just an unprefixed standalone copy.
 
 
 def _vault_owner_stub():
     return {"user_id": "test-uid", "token": "fake", "scope": "vault.owner"}
 
 
-def _analyze_client() -> TestClient:
+def _kai_client() -> TestClient:
     app = FastAPI()
-    app.include_router(analyze_module.router)
+    app.include_router(kai_router)
     app.dependency_overrides[require_vault_owner_token] = _vault_owner_stub
     return TestClient(app, raise_server_exceptions=False)
 
 
-def _losers_client() -> TestClient:
-    app = FastAPI()
-    app.include_router(losers_module.router)
-    app.dependency_overrides[require_vault_owner_token] = _vault_owner_stub
-    return TestClient(app, raise_server_exceptions=False)
+_analyze_client = _kai_client
+_losers_client = _kai_client
 
 
 # ---------------------------------------------------------------------------
 # Canonical attach point: api.routes.kai.analyze.analyze_ticker
-# POST /analyze  ->  AnalyzeRequest
+# POST /api/kai/analyze  ->  AnalyzeRequest
 # ---------------------------------------------------------------------------
 
 
@@ -235,7 +238,7 @@ class TestAnalyzeTickerRouteInputBounds:
     model bounds, before any service I/O.
     """
 
-    _URL = "/analyze"
+    _URL = "/api/kai/analyze"
 
     def test_valid_body_passes_validation(self):
         """A minimal valid body must not be rejected by validation."""
@@ -289,7 +292,7 @@ class TestAnalyzePortfolioLosersRouteInputBounds:
     bounds, before any service I/O.
     """
 
-    _URL = "/portfolio/analyze-losers"
+    _URL = "/api/kai/portfolio/analyze-losers"
 
     def test_valid_body_passes_validation(self):
         """A minimal valid body must not be rejected by validation."""
