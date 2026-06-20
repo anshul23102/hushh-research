@@ -6,6 +6,7 @@ Modular architecture with routes organized in api/routes/ directory.
 Run with: uvicorn server:app --reload --port 8000
 """
 
+import asyncio
 import logging
 import os
 import time
@@ -22,6 +23,11 @@ logging.basicConfig(level=logging.INFO)
 install_sensitive_log_filter()
 logger = logging.getLogger(__name__)
 _APP_RUNTIME_SETTINGS = get_app_runtime_settings()
+
+# Strong reference for background startup tasks. asyncio only holds a weak
+# reference to tasks created via create_task; without this, the consent
+# listener task can be garbage collected mid-run before it ever raises.
+_background_startup_tasks: set[asyncio.Task] = set()
 
 
 def _env_truthy(name: str, fallback: str = "false") -> bool:
@@ -426,11 +432,11 @@ async def startup_pool_and_iam_cache() -> None:
 @app.on_event("startup")
 async def startup_consent_listener():
     """Start background task that LISTENs to consent_audit_new (NOTIFY)."""
-    import asyncio
-
     from api.consent_listener import run_consent_listener
 
-    asyncio.create_task(run_consent_listener())
+    task = asyncio.create_task(run_consent_listener(), name="consent-listener")
+    _background_startup_tasks.add(task)
+    task.add_done_callback(_background_startup_tasks.discard)
 
 
 @app.on_event("startup")
