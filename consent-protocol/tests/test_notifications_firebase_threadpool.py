@@ -80,7 +80,8 @@ class TestNotificationsFirebaseThreadpool:
         monkeypatch.setattr(notif_module, "PushTokensService", _FakePushService)
 
         client = TestClient(_build_app(), raise_server_exceptions=True)
-        resp = client.delete(
+        resp = client.request(
+            "DELETE",
             "/api/notifications/unregister",
             json={"user_id": "user_abc"},
             headers={"Authorization": "Bearer fake-firebase-token"},
