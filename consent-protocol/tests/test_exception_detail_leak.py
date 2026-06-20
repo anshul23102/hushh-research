@@ -9,27 +9,33 @@ api.routes.agents.kai_chat
   -> detail MUST NOT contain str(e)
 
 api.routes.db_proxy.get_vault_status
-  -> except Exception: raise HTTPException(status_code=500, detail="Vault status is temporarily unavailable.")
+  -> except Exception: raise HTTPException(...,
+       detail="Vault status is temporarily unavailable.")
   -> detail MUST NOT contain str(e)
 
 api.routes.investors.get_investor
-  -> except Exception: raise HTTPException(status_code=500, detail="Investor data is temporarily unavailable.")
+  -> except Exception: raise HTTPException(...,
+       detail="Investor data is temporarily unavailable.")
   -> detail MUST NOT contain str(e)
 
 api.routes.investors.create_investor
-  -> except Exception: raise HTTPException(status_code=500, detail="An internal error occurred creating the investor profile.")
+  -> except Exception: raise HTTPException(...,
+       detail="An internal error occurred creating the investor profile.")
   -> detail MUST NOT contain str(e)
 
 api.routes.tickers.search_tickers
-  -> except Exception: raise HTTPException(status_code=500, detail="Ticker search is temporarily unavailable.")
+  -> except Exception: raise HTTPException(...,
+       detail="Ticker search is temporarily unavailable.")
   -> detail MUST NOT contain str(e)
 
 api.routes.tickers.all_tickers
-  -> except Exception: raise HTTPException(status_code=500, detail="Ticker data is temporarily unavailable.")
+  -> except Exception: raise HTTPException(...,
+       detail="Ticker data is temporarily unavailable.")
   -> detail MUST NOT contain str(e)
 
 api.routes.tickers.sync_tickers_from_holdings
-  -> except Exception: raise HTTPException(status_code=500, detail="Ticker sync is temporarily unavailable.")
+  -> except Exception: raise HTTPException(...,
+       detail="Ticker sync is temporarily unavailable.")
   -> detail MUST NOT contain str(e)
 
 Before this fix the 500 handlers used `detail=str(e)`, which allowed internal
