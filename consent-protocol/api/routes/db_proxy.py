@@ -550,10 +550,14 @@ async def vault_wrapper_upsert(
         ):
             raise HTTPException(
                 status_code=400,
-                detail={"error": "Passkey RP configuration is invalid for this environment.", "code": "VAULT_PASSKEY_RP_MISMATCH"},
+                detail={
+                    "error": "Passkey RP configuration is invalid for this environment.",
+                    "code": "VAULT_PASSKEY_RP_MISMATCH",
+                },
             )
         raise HTTPException(
-            status_code=400, detail={"error": "Invalid vault wrapper parameters.", "code": "VAULT_VALIDATION_ERROR"}
+            status_code=400,
+            detail={"error": "Invalid vault wrapper parameters.", "code": "VAULT_VALIDATION_ERROR"},
         )
     except Exception as e:
         logger.error(
@@ -620,7 +624,9 @@ async def vault_wrapper_delete(
             code = "VAULT_PASSPHRASE_REQUIRED"
         elif "Fallback primary method/wrapper" in message:
             code = "VAULT_PRIMARY_WRAPPER_NOT_FOUND"
-        raise HTTPException(status_code=400, detail={"error": "Invalid vault operation.", "code": code})
+        raise HTTPException(
+            status_code=400, detail={"error": "Invalid vault operation.", "code": code}
+        )
     except Exception as e:
         logger.error(
             "vault/wrapper/delete error user=%s method=%s: %s",
@@ -665,10 +671,17 @@ async def vault_primary_set(
         if "Primary method/wrapper must be an enrolled wrapper" in message:
             raise HTTPException(
                 status_code=400,
-                detail={"error": "The specified primary wrapper is not enrolled for this vault.", "code": "VAULT_PRIMARY_WRAPPER_NOT_FOUND"},
+                detail={
+                    "error": "The specified primary wrapper is not enrolled for this vault.",
+                    "code": "VAULT_PRIMARY_WRAPPER_NOT_FOUND",
+                },
             )
         raise HTTPException(
-            status_code=400, detail={"error": "Invalid primary method configuration.", "code": "VAULT_VALIDATION_ERROR"}
+            status_code=400,
+            detail={
+                "error": "Invalid primary method configuration.",
+                "code": "VAULT_VALIDATION_ERROR",
+            },
         )
     except Exception as e:
         logger.error(
