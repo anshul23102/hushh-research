@@ -128,9 +128,10 @@ async def require_vault_owner_consent_header(
 
     valid, reason, token_obj = await validate_token_with_db(token, ConsentScope.VAULT_OWNER)
     if not valid or token_obj is None:
+        logger.warning("db_proxy.token_invalid reason=%s", reason)
         raise HTTPException(
             status_code=401,
-            detail=f"Invalid token: {reason}",
+            detail="Invalid or expired consent token.",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
@@ -466,11 +467,16 @@ async def vault_setup(
 
     except ValueError as e:
         message = str(e)
+        logger.warning(
+            "vault/setup validation error user=%s exc_type=%s",
+            _mask_user_id(request.userId),
+            type(e).__name__,
+        )
         if "Active vault already exists" in message:
             raise HTTPException(
                 status_code=409,
                 detail={
-                    "error": message,
+                    "error": "A vault already exists for this user.",
                     "code": "VAULT_ALREADY_EXISTS",
                 },
             )
@@ -478,12 +484,13 @@ async def vault_setup(
             raise HTTPException(
                 status_code=400,
                 detail={
-                    "error": message,
+                    "error": "The specified primary wrapper is not enrolled for this vault.",
                     "code": "VAULT_PRIMARY_WRAPPER_NOT_FOUND",
                 },
             )
         raise HTTPException(
-            status_code=400, detail={"error": message, "code": "VAULT_VALIDATION_ERROR"}
+            status_code=400,
+            detail={"error": "Invalid vault setup parameters.", "code": "VAULT_VALIDATION_ERROR"},
         )
     except Exception as e:
         logger.error(
@@ -532,16 +539,25 @@ async def vault_wrapper_upsert(
 
     except ValueError as e:
         message = str(e)
+        logger.warning(
+            "vault/wrapper/upsert validation error user=%s exc_type=%s",
+            _mask_user_id(request.userId),
+            type(e).__name__,
+        )
         if (
             "requires passkey credential metadata including rp id" in message
             or "wrapper rp id is not allowed for this environment" in message
         ):
             raise HTTPException(
                 status_code=400,
-                detail={"error": message, "code": "VAULT_PASSKEY_RP_MISMATCH"},
+                detail={
+                    "error": "Passkey RP configuration is invalid for this environment.",
+                    "code": "VAULT_PASSKEY_RP_MISMATCH",
+                },
             )
         raise HTTPException(
-            status_code=400, detail={"error": message, "code": "VAULT_VALIDATION_ERROR"}
+            status_code=400,
+            detail={"error": "Invalid vault wrapper parameters.", "code": "VAULT_VALIDATION_ERROR"},
         )
     except Exception as e:
         logger.error(
@@ -594,6 +610,11 @@ async def vault_wrapper_delete(
 
     except ValueError as e:
         message = str(e)
+        logger.warning(
+            "vault/wrapper/delete validation error user=%s exc_type=%s",
+            _mask_user_id(request.userId),
+            type(e).__name__,
+        )
         code = "VAULT_VALIDATION_ERROR"
         if "vaultKeyHash mismatch" in message:
             code = "VAULT_KEY_HASH_MISMATCH"
@@ -603,7 +624,9 @@ async def vault_wrapper_delete(
             code = "VAULT_PASSPHRASE_REQUIRED"
         elif "Fallback primary method/wrapper" in message:
             code = "VAULT_PRIMARY_WRAPPER_NOT_FOUND"
-        raise HTTPException(status_code=400, detail={"error": message, "code": code})
+        raise HTTPException(
+            status_code=400, detail={"error": "Invalid vault operation.", "code": code}
+        )
     except Exception as e:
         logger.error(
             "vault/wrapper/delete error user=%s method=%s: %s",
@@ -640,13 +663,25 @@ async def vault_primary_set(
 
     except ValueError as e:
         message = str(e)
+        logger.warning(
+            "vault/primary/set validation error user=%s exc_type=%s",
+            _mask_user_id(request.userId),
+            type(e).__name__,
+        )
         if "Primary method/wrapper must be an enrolled wrapper" in message:
             raise HTTPException(
                 status_code=400,
-                detail={"error": message, "code": "VAULT_PRIMARY_WRAPPER_NOT_FOUND"},
+                detail={
+                    "error": "The specified primary wrapper is not enrolled for this vault.",
+                    "code": "VAULT_PRIMARY_WRAPPER_NOT_FOUND",
+                },
             )
         raise HTTPException(
-            status_code=400, detail={"error": message, "code": "VAULT_VALIDATION_ERROR"}
+            status_code=400,
+            detail={
+                "error": "Invalid primary method configuration.",
+                "code": "VAULT_VALIDATION_ERROR",
+            },
         )
     except Exception as e:
         logger.error(
@@ -725,10 +760,10 @@ async def validate_vault_owner_token(consent_token: str, user_id: str) -> None:
     valid, reason, token_obj = await validate_token_with_db(consent_token, ConsentScope.VAULT_OWNER)
 
     if not valid:
-        logger.warning(f"Invalid consent token: {reason}")
+        logger.warning("db_proxy.validate_vault_owner_token.invalid reason=%s", reason)
         raise HTTPException(
             status_code=401,
-            detail=f"Invalid consent token: {reason}",
+            detail="Invalid or expired consent token.",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
