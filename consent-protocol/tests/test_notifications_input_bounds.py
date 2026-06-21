@@ -99,13 +99,13 @@ def client():
 
     from fastapi.testclient import TestClient
 
-    import api.utils.firebase_auth as fb_mod
+    import api.routes.notifications as notif_mod
     from server import app
 
     def _stub_verify(auth_header: str | None) -> str:  # noqa: ARG001
         return "firebase_uid_stub_28chars_abc"
 
-    with patch.object(fb_mod, "verify_firebase_bearer", side_effect=_stub_verify):
+    with patch.object(notif_mod, "verify_firebase_bearer", side_effect=_stub_verify):
         yield TestClient(app, raise_server_exceptions=False)
 
 
