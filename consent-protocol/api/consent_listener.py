@@ -142,6 +142,16 @@ def get_consent_queue(user_id: str) -> asyncio.Queue:
     return _consent_notify_queues[user_id]
 
 
+def remove_consent_queue(user_id: str) -> None:
+    """Remove the per-user SSE queue after the client disconnects.
+
+    Called from the finally block of consent_event_generator so that
+    _consent_notify_queues does not grow without bound across repeated
+    connect/disconnect cycles.
+    """
+    _consent_notify_queues.pop(user_id, None)
+
+
 def get_consent_listener_status() -> dict:
     """Return status for GET /debug/consent-listener (listener_active, queue_count, notify_received_count)."""
     return {
