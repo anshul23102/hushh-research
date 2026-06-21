@@ -21,6 +21,7 @@ from contextlib import contextmanager
 from unittest.mock import MagicMock, patch
 
 import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
@@ -36,7 +37,7 @@ _GOOD_KEY = "A" * 64   # 64-char base64 blob, valid pubkey placeholder
 _GOOD_TOKEN = "tok_" + "x" * 32
 
 
-def _stub_principal():
+def _stub_principal(**_kwargs):
     """Minimal DeveloperPrincipal-like stub."""
     p = MagicMock()
     p.app_id = "test_app_id"
@@ -46,21 +47,23 @@ def _stub_principal():
 
 @contextmanager
 def _dev_client():
-    from api.developer_auth import (
-        authenticate_developer_principal,
-        try_authenticate_developer_principal,
-    )
-    from server import app
+    """Mount only developer.router on a minimal FastAPI app so the MCP
+    session-manager lifespan (single-start-per-process) is never touched.
 
-    with patch.dict(
-        app.dependency_overrides,
-        {
-            authenticate_developer_principal: _stub_principal,
-            try_authenticate_developer_principal: _stub_principal,
-        },
-    ):
-        with TestClient(app, raise_server_exceptions=False) as client:
-            yield client
+    authenticate_developer_principal is called directly inside the route
+    handlers rather than via Depends(), so it must be patched at the
+    module level instead of through app.dependency_overrides.
+    """
+    import api.routes.developer as developer_mod
+
+    app = FastAPI()
+    app.include_router(developer_mod.router)
+
+    with patch.object(developer_mod, "authenticate_developer_principal", side_effect=_stub_principal):
+        with patch.object(
+            developer_mod, "try_authenticate_developer_principal", side_effect=_stub_principal
+        ):
+            yield TestClient(app, raise_server_exceptions=False)
 
 
 # ---------------------------------------------------------------------------
