@@ -144,10 +144,10 @@ async def lifespan(app: FastAPI):
 
     yield
 
-    # Shutdown hooks
+    # Shutdown hooks (preserve existing registration order)
+    await shutdown_remote_mcp_transport()
     await shutdown_gmail_receipts_sync()
     await shutdown_email_delivery_queue()
-    await shutdown_remote_mcp_transport()
 
 
 app = FastAPI(
