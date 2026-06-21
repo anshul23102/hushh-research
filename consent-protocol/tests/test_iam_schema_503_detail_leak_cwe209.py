@@ -46,10 +46,19 @@ STATIC_MSG = "Service temporarily unavailable. Please try again later."
 
 
 def _load_router(relative_path: str, module_name: str):
-    """Load a FastAPI router module by relative path without triggering __init__ imports."""
+    """Load a FastAPI router module by relative path without triggering __init__ imports.
+
+    Registers the module in sys.modules under module_name before executing it,
+    so that unittest.mock.patch("module_name.attr", ...) resolves to this same
+    module object instead of triggering a separate real import that the router
+    object never sees.
+    """
+    import sys
+
     path = Path(__file__).resolve().parents[1] / relative_path
     spec = importlib.util.spec_from_file_location(module_name, path)
     mod = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = mod
     spec.loader.exec_module(mod)
     return mod.router
 
@@ -125,8 +134,11 @@ class TestInvitesIAMSchemaLeak:
 @pytest.fixture(scope="module")
 def iam_client():
     router = _load_router("api/routes/iam.py", "api.routes.iam")
+    from api.middleware import require_firebase_auth
+
     app = FastAPI()
     app.include_router(router)
+    app.dependency_overrides[require_firebase_auth] = lambda: "user-abc"
     return TestClient(app, raise_server_exceptions=False)
 
 
@@ -139,10 +151,7 @@ class TestIAMPersonaLeak:
 
     def test_sentinel_absent_from_persona_switch(self, iam_client):
         exc = self._mock_exc()
-        with (
-            patch("api.routes.iam.require_firebase_auth", return_value=lambda: "user-abc"),
-            patch("api.routes.iam.RIAIAMService") as mock_svc,
-        ):
+        with patch("api.routes.iam.RIAIAMService") as mock_svc:
             mock_svc.return_value.switch_persona = AsyncMock(side_effect=exc)
             resp = iam_client.post(
                 "/api/iam/persona/switch",
@@ -157,10 +166,7 @@ class TestIAMPersonaLeak:
 
     def test_static_message_in_persona_switch(self, iam_client):
         exc = self._mock_exc()
-        with (
-            patch("api.routes.iam.require_firebase_auth", return_value=lambda: "user-abc"),
-            patch("api.routes.iam.RIAIAMService") as mock_svc,
-        ):
+        with patch("api.routes.iam.RIAIAMService") as mock_svc:
             mock_svc.return_value.switch_persona = AsyncMock(side_effect=exc)
             resp = iam_client.post(
                 "/api/iam/persona/switch",
@@ -216,6 +222,70 @@ class TestMarketplaceIAMSchemaLeak:
         with patch("api.routes.marketplace.RIAIAMService") as mock_svc:
             mock_svc.return_value.search_marketplace_rias = AsyncMock(side_effect=exc)
             resp = marketplace_client.get("/api/marketplace/rias")
+
+        data = resp.json()
+        assert "hint" not in data, (
+            f"'hint' key with admin commands must not appear in 503 response: {data}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# ria.py
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(scope="module")
+def ria_client():
+    router = _load_router("api/routes/ria.py", "api.routes.ria")
+    from api.middleware import require_firebase_auth
+
+    app = FastAPI()
+    app.include_router(router)
+    app.dependency_overrides[require_firebase_auth] = lambda: "user-abc"
+    return TestClient(app, raise_server_exceptions=False)
+
+
+class TestRiaOnboardingSubmitIAMSchemaLeak:
+    """POST /api/ria/onboarding/submit must not expose IAMSchemaNotReadyError detail."""
+
+    def _mock_exc(self) -> Any:
+        from hushh_mcp.services.ria_iam_service import IAMSchemaNotReadyError
+        return IAMSchemaNotReadyError(f"IAM table missing [{SENTINEL}] - run migrate")
+
+    def test_sentinel_absent_from_onboarding_submit(self, ria_client):
+        exc = self._mock_exc()
+        with patch("api.routes.ria.RIAIAMService") as mock_svc:
+            mock_svc.return_value.submit_ria_onboarding = AsyncMock(side_effect=exc)
+            resp = ria_client.post(
+                "/api/ria/onboarding/submit",
+                json={"display_name": "Jane Advisor"},
+            )
+
+        assert resp.status_code == 503
+        body = resp.text
+        _assert_sentinel_absent(body, "POST /api/ria/onboarding/submit")
+        _assert_internal_cmd_absent(body, "POST /api/ria/onboarding/submit")
+
+    def test_static_message_in_onboarding_submit(self, ria_client):
+        exc = self._mock_exc()
+        with patch("api.routes.ria.RIAIAMService") as mock_svc:
+            mock_svc.return_value.submit_ria_onboarding = AsyncMock(side_effect=exc)
+            resp = ria_client.post(
+                "/api/ria/onboarding/submit",
+                json={"display_name": "Jane Advisor"},
+            )
+
+        _assert_static_message_present(resp.text, "POST /api/ria/onboarding/submit")
+
+    def test_hint_field_absent_from_response(self, ria_client):
+        """The 'hint' key containing admin commands must not appear in the body."""
+        exc = self._mock_exc()
+        with patch("api.routes.ria.RIAIAMService") as mock_svc:
+            mock_svc.return_value.submit_ria_onboarding = AsyncMock(side_effect=exc)
+            resp = ria_client.post(
+                "/api/ria/onboarding/submit",
+                json={"display_name": "Jane Advisor"},
+            )
 
         data = resp.json()
         assert "hint" not in data, (

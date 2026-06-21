@@ -317,6 +317,37 @@ async def onboarding_status(firebase_uid: str = Depends(require_firebase_auth)):
         return _iam_schema_not_ready_response(exc)
 
 
+@router.post("/profile/refresh-license")
+@limiter.limit("6/minute")
+async def refresh_profile_license(
+    payload: RIAProfileRefreshLicenseRequest,
+    request: Request,
+    firebase_uid: str = Depends(require_firebase_auth),
+):
+    service = RIAIAMService()
+    try:
+        _ = request
+        return await service.refresh_ria_profile_from_license(
+            firebase_uid,
+            license_number=payload.license_number,
+            regulator=payload.regulator,
+            force_live_verification=payload.force_live_verification,
+        )
+    except IAMSchemaNotReadyError as exc:
+        return _iam_schema_not_ready_response(exc)
+    except RIAIAMPolicyError as exc:
+        if exc.status_code == 409:
+            return JSONResponse(
+                status_code=409,
+                content={
+                    "error": str(exc),
+                    "code": "RIA_ONBOARDING_REQUIRED",
+                    "route": "/ria/onboarding",
+                },
+            )
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+
 @router.get("/home")
 async def ria_home(firebase_uid: str = Depends(require_firebase_auth)):
     service = RIAIAMService()
