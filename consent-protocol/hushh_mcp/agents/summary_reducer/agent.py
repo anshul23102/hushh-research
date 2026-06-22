@@ -200,9 +200,18 @@ def _service_key_is_unsafe(key: str) -> bool:
     Only two classes of keys are rejected here:
 
     1. Currency/numeric patterns (e.g. "has_$50000_portfolio").
-    2. ``has_``-prefixed keys that contain a banned semantic substring.
-       These are the exact attack vector from issue #586: a poisoned boolean
-       flag that encodes a raw financial value in its key name.
+    2. Boolean-flag keys that contain a banned semantic substring.
+
+       The canonical attach point
+       (``PersonalKnowledgeModelService._normalize_domain_summary``) admits a
+       boolean into the persisted summary when its name is ``has_``-prefixed OR
+       ``_enabled``-suffixed OR ``_available``-suffixed. The issue #586 attack
+       vector — a poisoned boolean flag that smuggles a raw financial term into
+       its key name — therefore applies to all three admitted shapes, not just
+       ``has_``. Screening only ``has_`` left ``net_worth_enabled`` /
+       ``portfolio_value_available`` style keys able to reach the DB. We now
+       reject any of the three admitted boolean shapes that carries a banned
+       semantic substring.
 
     Plain aggregate keys (e.g. "holdings_count") are NOT rejected here
     because they carry no raw values and are required by downstream consumers.
@@ -210,7 +219,12 @@ def _service_key_is_unsafe(key: str) -> bool:
     key_lower = key.lower()
     if _CURRENCY_IN_KEY_PATTERN.search(key_lower):
         return True
-    if key_lower.startswith("has_") and any(banned in key_lower for banned in _BANNED_KEY_SUBSTRINGS):
+    is_admitted_boolean_shape = (
+        key_lower.startswith("has_")
+        or key_lower.endswith("_enabled")
+        or key_lower.endswith("_available")
+    )
+    if is_admitted_boolean_shape and any(banned in key_lower for banned in _BANNED_KEY_SUBSTRINGS):
         return True
     return False
 

@@ -137,6 +137,48 @@ def test_normalize_domain_summary_strips_holdings_key():
     assert result.get("has_trades") is True
 
 
+def test_normalize_domain_summary_strips_enabled_and_available_boolean_leaks():
+    """
+    Regression for the structural-leak gap on the *other* admitted boolean
+    shapes (issue #586, maintainer hardening).
+
+    _normalize_domain_summary admits a boolean into the persisted summary when
+    its key is ``has_``-prefixed OR ``_enabled``-suffixed OR
+    ``_available``-suffixed (see the boolean branch in that method). The
+    original guardrail only screened ``has_``-prefixed keys, so a poisoned
+    ``net_worth_enabled`` / ``portfolio_value_available`` flag could smuggle a
+    banned financial term straight into the DB upsert through the other two
+    admitted shapes.
+
+    This test would FAIL against a ``has_``-only guard and PASS once
+    scrub_dict_keys() screens all three admitted boolean shapes.
+    """
+    svc = _make_pkm_service()
+
+    poisoned_summary = {
+        "attribute_count": 4,
+        # _enabled / _available suffix booleans carrying banned semantic terms
+        "net_worth_enabled": True,
+        "portfolio_value_available": True,
+        "balance_enabled": True,
+        # legitimate booleans on the same admitted shapes must survive
+        "trading_enabled": True,
+        "notifications_available": True,
+        "has_trades": True,
+    }
+
+    result = svc._normalize_domain_summary("financial", poisoned_summary)
+
+    assert "net_worth_enabled" not in result, "_enabled key carrying a banned term must be stripped"
+    assert "portfolio_value_available" not in result, (
+        "_available key carrying a banned term must be stripped"
+    )
+    assert "balance_enabled" not in result, "_enabled key carrying a banned term must be stripped"
+    assert result.get("trading_enabled") is True, "Safe _enabled key must survive"
+    assert result.get("notifications_available") is True, "Safe _available key must survive"
+    assert result.get("has_trades") is True, "Safe has_ key must survive"
+
+
 def test_normalize_domain_summary_safe_keys_unchanged():
     """
     Safe keys that do not contain monetary amounts or banned words must
