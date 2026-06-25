@@ -1114,7 +1114,9 @@ async def create_generic_consent_request(
         except IAMSchemaNotReadyError as exc:
             raise HTTPException(status_code=503, detail="Verification service unavailable") from exc
         except RIAIAMPolicyError as exc:
-            raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+            raise HTTPException(
+                status_code=exc.status_code, detail="Request could not be completed"
+            ) from exc
 
     try:
         return await RIAIAMService().create_ria_consent_request(
@@ -1130,7 +1132,9 @@ async def create_generic_consent_request(
             reason=payload.reason,
         )
     except RIAIAMPolicyError as exc:
-        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=exc.status_code, detail="Request could not be completed"
+        ) from exc
 
 
 @router.get("/handshake/history")
@@ -1164,7 +1168,9 @@ async def disconnect_relationship(
             ria_profile_id=payload.ria_profile_id,
         )
     except RIAIAMPolicyError as exc:
-        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=exc.status_code, detail="Request could not be completed"
+        ) from exc
 
 
 @router.post("/vault-owner-token")
