@@ -360,7 +360,7 @@ class AppRuntimeState(BaseModel):
 
 
 class VoicePlanRequest(BaseModel):
-    user_id: str = Field(..., max_length=128)
+    user_id: str = Field(..., min_length=1, max_length=128)
     transcript: str = Field(..., min_length=1, max_length=10_000)
     context: dict[str, Any] = Field(default_factory=dict)
     app_state: Optional[AppRuntimeState] = None
@@ -423,7 +423,7 @@ class VoicePlanResponse(BaseModel):
 
 
 class VoiceComposeRequest(BaseModel):
-    user_id: str = Field(..., max_length=128)
+    user_id: str = Field(..., min_length=1, max_length=128)
     transcript: str = Field(..., min_length=1, max_length=10_000)
     response: VoiceResponsePayload
     app_state: Optional[AppRuntimeState] = None
@@ -434,7 +434,7 @@ class VoiceComposeRequest(BaseModel):
     mode: Optional[str] = Field(default=None, max_length=50)
     action_id: Optional[str] = Field(default=None, max_length=128)
     slots: dict[str, Any] = Field(default_factory=dict)
-    guards: list[str] = Field(default_factory=list)
+    guards: list[str] = Field(default_factory=list, max_length=50)
     reply_strategy: Optional[str] = Field(default=None, max_length=50)
     clarification: Optional[VoiceClarificationPayload] = None
     action_completion: Optional[str] = Field(default=None, max_length=500)
@@ -454,13 +454,13 @@ class VoiceComposeResponse(BaseModel):
 
 
 class VoiceTTSRequest(BaseModel):
-    user_id: str = Field(..., max_length=128)
+    user_id: str = Field(..., min_length=1, max_length=128)
     text: str = Field(..., min_length=1, max_length=4096)
     voice: Optional[str] = Field(default="alloy", max_length=32)
 
 
 class VoiceCapabilityRequest(BaseModel):
-    user_id: str = Field(..., max_length=128)
+    user_id: str = Field(..., min_length=1, max_length=128)
 
 
 class VoiceCapabilityResponse(BaseModel):
@@ -482,7 +482,7 @@ class VoiceCapabilityResponse(BaseModel):
 
 
 class VoiceRealtimeSessionRequest(BaseModel):
-    user_id: str = Field(..., max_length=128)
+    user_id: str = Field(..., min_length=1, max_length=128)
     voice: Optional[str] = Field(default=None, max_length=32)
 
 

@@ -4,7 +4,7 @@ Tests for input bounds on voice and support request models.
 Canonical attach points
 -----------------------
 api.routes.kai.voice.kai_voice_plan
-  -> payload: VoicePlanRequest (user_id max_length=128, transcript max_length=32000,
+  -> payload: VoicePlanRequest (user_id max_length=128, transcript max_length=10000,
      memory_short list max_length=100)
   -> FastAPI returns HTTP 422 when any bound is exceeded
 
@@ -76,11 +76,11 @@ class TestVoicePlanRequest:
 
     def test_transcript_too_long_raises(self):
         with pytest.raises(ValidationError):
-            VoicePlanRequest(user_id="u1", transcript="t" * 32_001)
+            VoicePlanRequest(user_id="u1", transcript="t" * 10_001)
 
     def test_transcript_at_max_passes(self):
-        r = VoicePlanRequest(user_id="u1", transcript="t" * 32_000)
-        assert len(r.transcript) == 32_000
+        r = VoicePlanRequest(user_id="u1", transcript="t" * 10_000)
+        assert len(r.transcript) == 10_000
 
     def test_turn_id_too_long_raises(self):
         with pytest.raises(ValidationError):
@@ -88,7 +88,7 @@ class TestVoicePlanRequest:
 
     def test_transcript_final_too_long_raises(self):
         with pytest.raises(ValidationError):
-            VoicePlanRequest(user_id="u1", transcript="t", transcript_final="f" * 32_001)
+            VoicePlanRequest(user_id="u1", transcript="t", transcript_final="f" * 10_001)
 
     def test_memory_short_over_100_raises(self):
         with pytest.raises(ValidationError):
@@ -127,7 +127,7 @@ class TestVoiceComposeRequest:
 
     def test_transcript_too_long_raises(self):
         with pytest.raises(ValidationError):
-            VoiceComposeRequest(**self._valid(transcript="t" * 32_001))
+            VoiceComposeRequest(**self._valid(transcript="t" * 10_001))
 
     def test_turn_id_too_long_raises(self):
         with pytest.raises(ValidationError):
@@ -139,7 +139,7 @@ class TestVoiceComposeRequest:
 
     def test_mode_too_long_raises(self):
         with pytest.raises(ValidationError):
-            VoiceComposeRequest(**self._valid(mode="m" * 65))
+            VoiceComposeRequest(**self._valid(mode="m" * 51))
 
     def test_action_id_too_long_raises(self):
         with pytest.raises(ValidationError):
@@ -151,7 +151,7 @@ class TestVoiceComposeRequest:
 
     def test_reply_strategy_too_long_raises(self):
         with pytest.raises(ValidationError):
-            VoiceComposeRequest(**self._valid(reply_strategy="r" * 65))
+            VoiceComposeRequest(**self._valid(reply_strategy="r" * 51))
 
     def test_action_completion_too_long_raises(self):
         with pytest.raises(ValidationError):
@@ -198,7 +198,7 @@ class TestVoiceTTSRequest:
 
     def test_voice_too_long_raises(self):
         with pytest.raises(ValidationError):
-            VoiceTTSRequest(user_id="u1", text="Hello", voice="v" * 65)
+            VoiceTTSRequest(user_id="u1", text="Hello", voice="v" * 33)
 
 
 # ---------------------------------------------------------------------------
@@ -240,7 +240,7 @@ class TestVoiceRealtimeSessionRequest:
 
     def test_voice_too_long_raises(self):
         with pytest.raises(ValidationError):
-            VoiceRealtimeSessionRequest(user_id="u1", voice="v" * 65)
+            VoiceRealtimeSessionRequest(user_id="u1", voice="v" * 33)
 
 
 # ---------------------------------------------------------------------------
@@ -411,8 +411,8 @@ class TestKaiVoicePlanRouteInputBounds:
         assert resp.status_code == 422
 
     def test_transcript_over_max_returns_422(self):
-        """transcript > 32000 chars must be rejected with 422."""
-        resp = _voice_client().post(self._URL, json=self._valid_body(transcript="t" * 32_001))
+        """transcript > 10000 chars must be rejected with 422."""
+        resp = _voice_client().post(self._URL, json=self._valid_body(transcript="t" * 10_001))
         assert resp.status_code == 422
 
     def test_memory_short_over_max_returns_422(self):
