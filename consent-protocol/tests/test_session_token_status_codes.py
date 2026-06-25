@@ -5,7 +5,7 @@ Canonical attach point
 ----------------------
 api.routes.session.issue_session_token
   -> payload: SessionTokenRequest (userId min_length=1, max_length=128,
-     scope min_length=1, max_length=256)
+     scope min_length=1, max_length=64)
   -> FastAPI returns HTTP 422 when any bound is exceeded, before Firebase
      verification runs
   -> POST /api/consent/issue-token
@@ -50,10 +50,10 @@ class TestSessionTokenRequest:
 
     def test_scope_too_long_rejected(self):
         with pytest.raises(ValidationError):
-            SessionTokenRequest(userId="u1", scope="s" * 257)
+            SessionTokenRequest(userId="u1", scope="s" * 65)
 
     def test_scope_max_accepted(self):
-        SessionTokenRequest(userId="u1", scope="s" * 256)
+        SessionTokenRequest(userId="u1", scope="s" * 64)
 
 
 # ---------------------------------------------------------------------------
@@ -195,8 +195,8 @@ class TestIssueSessionTokenRouteInputBounds:
         assert resp.status_code != 422
 
     def test_scope_over_max_returns_422(self):
-        """scope > 256 chars must be rejected with 422 before any Firebase call."""
-        resp = _session_client().post(self._URL, json={"userId": "u1", "scope": "s" * 257})
+        """scope > 64 chars must be rejected with 422 before any Firebase call."""
+        resp = _session_client().post(self._URL, json={"userId": "u1", "scope": "s" * 65})
         assert resp.status_code == 422
 
     def test_empty_scope_returns_422(self):
