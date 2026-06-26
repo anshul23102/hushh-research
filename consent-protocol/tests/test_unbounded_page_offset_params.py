@@ -1,36 +1,33 @@
 # tests/test_unbounded_page_offset_params.py
 """
-PR attach points:
-  GET /api/ria/clients                (api/routes/ria.py :: ria_clients)
-  GET /api/consent/center/list        (api/routes/consent.py :: get_consent_center_list)
-  GET /api/consent/handshake/history  (api/routes/consent.py :: get_handshake_history)
+PR attach point:
+  GET /api/ria/clients  (api/routes/ria.py :: ria_clients)
 
-Verifies that unbounded page Query params are now capped with le=10_000,
+Verifies that the unbounded page Query param is now capped with le=10_000,
 preventing authenticated DoS via arbitrarily deep DB offset scans.
+
+consent.py's get_consent_center_list and get_handshake_history routes already
+have a page upper bound (le=1_000) from a separate change and are not part of
+this diff.
 """
 
 from __future__ import annotations
 
 import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from api.middleware import require_firebase_auth, require_vault_owner_token
+from api.routes import ria as ria_mod
 
 _UID = "test-uid-page"
 
 
 @pytest.fixture()
 def client():
-    from api.main import app
-
-    app.dependency_overrides[require_firebase_auth] = lambda: _UID
-    app.dependency_overrides[require_vault_owner_token] = lambda: {
-        "user_id": _UID,
-        "token": "fake",
-        "scope": "vault.owner",
-    }
+    app = FastAPI()
+    app.include_router(ria_mod.router)
+    app.dependency_overrides[ria_mod._require_ria_verified] = lambda: _UID
     yield TestClient(app, raise_server_exceptions=False)
-    app.dependency_overrides.clear()
 
 
 # ---------------------------------------------------------------------------
@@ -48,28 +45,3 @@ def test_ria_clients_page_at_cap_accepted(client: TestClient) -> None:
     """page = 10_000 must NOT be rejected with 422 (boundary value)."""
     resp = client.get("/api/ria/clients?page=10000")
     assert resp.status_code != 422, f"Boundary page=10000 rejected: {resp.status_code}"
-
-
-# ---------------------------------------------------------------------------
-# GET /api/consent/center/list — page le=10_000
-# ---------------------------------------------------------------------------
-
-
-def test_consent_center_list_page_over_cap_rejected(client: TestClient) -> None:
-    """page > 10_000 must be rejected with 422."""
-    resp = client.get("/api/consent/center/list?page=99999")
-    assert resp.status_code == 422, resp.text
-
-
-# ---------------------------------------------------------------------------
-# GET /api/consent/handshake/history — page le=10_000
-# ---------------------------------------------------------------------------
-
-
-def test_handshake_history_page_over_cap_rejected(client: TestClient) -> None:
-    """page > 10_000 must be rejected with 422."""
-    resp = client.get(
-        "/api/consent/handshake/history?counterpart_id=some-ria&page=99999"
-    )
-    assert resp.status_code == 422, resp.text
-
