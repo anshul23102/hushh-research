@@ -29,10 +29,11 @@ import pytest
 
 
 def _reset_queues() -> None:
-    """Clear the module-level dict between tests to prevent cross-test bleed."""
+    """Clear the module-level dicts between tests to prevent cross-test bleed."""
     from api import consent_listener
 
     consent_listener._consent_notify_queues.clear()
+    consent_listener._consent_notify_queue_refcounts.clear()
 
 
 def _make_fake_consent_db_module() -> ModuleType:
@@ -110,6 +111,30 @@ class TestRemoveConsentQueue:
         assert len(_consent_notify_queues) == 3
         remove_consent_queue("u2")
         assert len(_consent_notify_queues) == 2
+
+    def test_concurrent_connections_for_same_user_share_queue_until_last_disconnects(self):
+        """A user can have multiple concurrent SSE connections (multiple tabs,
+        web + mobile). They share one queue. Disconnecting one connection must
+        not tear down the queue out from under the other still-open one.
+        """
+        from api.consent_listener import (
+            _consent_notify_queues,
+            get_consent_queue,
+            remove_consent_queue,
+        )
+
+        first = get_consent_queue("user-multi")
+        second = get_consent_queue("user-multi")
+        assert first is second
+
+        remove_consent_queue("user-multi")
+        assert "user-multi" in _consent_notify_queues, (
+            "queue was removed while a second connection for the same user "
+            "is still open"
+        )
+
+        remove_consent_queue("user-multi")
+        assert "user-multi" not in _consent_notify_queues
 
 
 # ---------------------------------------------------------------------------
