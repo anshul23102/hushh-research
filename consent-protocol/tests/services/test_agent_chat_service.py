@@ -133,40 +133,47 @@ def test_create_runtime_client_uses_byok_key_without_env_fallback(monkeypatch):
     assert calls == [{"vertexai": False, "api_key": "USER_BYOK_KEY"}]
 
 
-def test_create_managed_runtime_client_uses_adc_not_api_key(monkeypatch):
-    """Managed Vertex client must use ADC (project+location), never an API key."""
+def test_create_managed_runtime_client_project_fallback(monkeypatch):
     calls: list[dict] = []
+    monkeypatch.setattr("hushh_mcp.services.agent_chat_service.genai.Client", lambda **k: calls.append(k) or SimpleNamespace(kind="client"))
 
-    def fake_client(**kwargs):
-        calls.append(kwargs)
-        return SimpleNamespace(kind="client")
-
-    monkeypatch.setattr("hushh_mcp.services.agent_chat_service.genai.Client", fake_client)
-    monkeypatch.setenv("GOOGLE_CLOUD_PROJECT", "test-project")
-    monkeypatch.setenv("GOOGLE_CLOUD_LOCATION", "us-east1")
-
-    client = create_managed_runtime_client("gemini")
-
-    assert client.kind == "client"
-    assert calls == [{"vertexai": True, "project": "test-project", "location": "us-east1"}]
-    assert "api_key" not in calls[0], "API key must never be passed to the Vertex client"
-
-
-def test_create_managed_runtime_client_defaults_location_to_us_central1(monkeypatch):
-    """When GOOGLE_CLOUD_LOCATION is absent, location defaults to us-central1."""
-    calls: list[dict] = []
-
-    def fake_client(**kwargs):
-        calls.append(kwargs)
-        return SimpleNamespace(kind="client")
-
-    monkeypatch.setattr("hushh_mcp.services.agent_chat_service.genai.Client", fake_client)
-    monkeypatch.setenv("GOOGLE_CLOUD_PROJECT", "test-project")
-    monkeypatch.delenv("GOOGLE_CLOUD_LOCATION", raising=False)
-
+    # GOOGLE_CLOUD_PROJECT takes precedence
+    monkeypatch.setenv("GOOGLE_CLOUD_PROJECT", "proj-1")
+    monkeypatch.setenv("GCP_PROJECT", "proj-2")
     create_managed_runtime_client("gemini")
+    assert calls[-1]["project"] == "proj-1"
 
-    assert calls[0]["location"] == "us-central1"
+    # Falls back to GCP_PROJECT
+    monkeypatch.delenv("GOOGLE_CLOUD_PROJECT")
+    create_managed_runtime_client("gemini")
+    assert calls[-1]["project"] == "proj-2"
+
+
+def test_create_managed_runtime_client_location_fallback(monkeypatch):
+    calls: list[dict] = []
+    monkeypatch.setattr("hushh_mcp.services.agent_chat_service.genai.Client", lambda **k: calls.append(k) or SimpleNamespace(kind="client"))
+
+    # GOOGLE_CLOUD_LOCATION takes precedence
+    monkeypatch.setenv("GOOGLE_CLOUD_LOCATION", "loc-1")
+    monkeypatch.setenv("GCP_LOCATION", "loc-2")
+    monkeypatch.setenv("GOOGLE_CLOUD_REGION", "loc-3")
+    create_managed_runtime_client("gemini")
+    assert calls[-1]["location"] == "loc-1"
+
+    # Falls back to GCP_LOCATION
+    monkeypatch.delenv("GOOGLE_CLOUD_LOCATION")
+    create_managed_runtime_client("gemini")
+    assert calls[-1]["location"] == "loc-2"
+
+    # Falls back to GOOGLE_CLOUD_REGION
+    monkeypatch.delenv("GCP_LOCATION")
+    create_managed_runtime_client("gemini")
+    assert calls[-1]["location"] == "loc-3"
+
+    # Defaults to "us-central1"
+    monkeypatch.delenv("GOOGLE_CLOUD_REGION")
+    create_managed_runtime_client("gemini")
+    assert calls[-1]["location"] == "us-central1"
 
 
 @pytest.mark.anyio

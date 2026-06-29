@@ -433,23 +433,25 @@ def create_managed_runtime_client(
     project: str | None = None,
     location: str | None = None,
 ):
-    """Create a Vertex AI-backed Gemini client using ADC (Application Default Credentials).
-
-    The client intentionally does NOT accept an API key: the Vertex AI endpoint
-    (aiplatform.googleapis.com) requires OAuth 2.0 Bearer tokens, not API keys.
-    Credentials are resolved via google.auth.default() automatically.
-
-    Args:
-        runtime_provider: Must be "gemini".
-        project: GCP project ID. Falls back to GOOGLE_CLOUD_PROJECT env var.
-        location: GCP region. Falls back to GOOGLE_CLOUD_LOCATION env var,
-            then "us-central1".
-    """
     provider = runtime_provider.strip().lower()
-    resolved_project = (project or os.getenv("GOOGLE_CLOUD_PROJECT", "")).strip() or None
-    resolved_location = (
-        (location or os.getenv("GOOGLE_CLOUD_LOCATION", "")).strip() or "us-central1"
+
+    resolved_project = (
+        project
+        or os.getenv("GOOGLE_CLOUD_PROJECT")
+        or os.getenv("GCP_PROJECT")
     )
+    
+    if resolved_project:
+        resolved_project = resolved_project.strip()
+
+    resolved_location = (
+        location
+        or os.getenv("GOOGLE_CLOUD_LOCATION")
+        or os.getenv("GCP_LOCATION")
+        or os.getenv("GOOGLE_CLOUD_REGION")
+        or "us-central1"
+    )
+    resolved_location = resolved_location.strip()
 
     if provider == "gemini":
         return genai.Client(
@@ -459,7 +461,6 @@ def create_managed_runtime_client(
         )
 
     raise ValueError(f"Unsupported runtime provider: {provider}")
-
 
 
 def _redacted_runtime_evidence(evidence: dict[str, Any]) -> dict[str, Any]:
