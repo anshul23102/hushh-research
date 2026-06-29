@@ -427,17 +427,39 @@ def create_runtime_client(runtime_provider: str, user_key: str):
     raise ValueError(f"Unsupported runtime provider: {provider}")
 
 
-def create_managed_runtime_client(runtime_provider: str, user_key: str):
-    provider = runtime_provider.strip().lower()
-    key = user_key.strip()
+def create_managed_runtime_client(
+    runtime_provider: str,
+    *,
+    project: str | None = None,
+    location: str | None = None,
+):
+    """Create a Vertex AI-backed Gemini client using ADC (Application Default Credentials).
 
-    if not key:
-        raise RuntimeError("Managed Gemini API key is not configured")
+    The client intentionally does NOT accept an API key: the Vertex AI endpoint
+    (aiplatform.googleapis.com) requires OAuth 2.0 Bearer tokens, not API keys.
+    Credentials are resolved via google.auth.default() automatically.
+
+    Args:
+        runtime_provider: Must be "gemini".
+        project: GCP project ID. Falls back to GOOGLE_CLOUD_PROJECT env var.
+        location: GCP region. Falls back to GOOGLE_CLOUD_LOCATION env var,
+            then "us-central1".
+    """
+    provider = runtime_provider.strip().lower()
+    resolved_project = (project or os.getenv("GOOGLE_CLOUD_PROJECT", "")).strip() or None
+    resolved_location = (
+        (location or os.getenv("GOOGLE_CLOUD_LOCATION", "")).strip() or "us-central1"
+    )
 
     if provider == "gemini":
-        return genai.Client(vertexai=True, api_key=key)
+        return genai.Client(
+            vertexai=True,
+            project=resolved_project,
+            location=resolved_location,
+        )
 
     raise ValueError(f"Unsupported runtime provider: {provider}")
+
 
 
 def _redacted_runtime_evidence(evidence: dict[str, Any]) -> dict[str, Any]:
@@ -838,12 +860,8 @@ class AgentChatService:
     @property
     def client(self):
         if self._client is None:
-            api_key = self.settings.google_api_key or os.getenv("GOOGLE_API_KEY", "").strip()
-            if not api_key:
-                raise RuntimeError("Gemini API key is not configured")
             self._client = create_managed_runtime_client(
                 runtime_provider=self.runtime_manifest.model.provider,
-                user_key=api_key,
             )
         return self._client
 
