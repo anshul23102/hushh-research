@@ -6,12 +6,12 @@ import { describe, expect, it } from "vitest";
 const profilePageSource = readFileSync(
   join(process.cwd(), "app/profile/page.tsx"),
   "utf8",
-);
+).replace(/\r\n/g, "\n");
 
 describe("profile security deletion contract", () => {
   it("keeps Security reachable before vault creation", () => {
-    expect(profilePageSource).toContain(
-      'vaultAccess.needsVaultCreation && panel !== "security"',
+    expect(profilePageSource).toMatch(
+      /vaultAccess\.needsVaultCreation\s*&&\s*panel\s*!==\s*['"]security['"]/,
     );
   });
 
@@ -25,7 +25,7 @@ describe("profile security deletion contract", () => {
   });
 
   it("keeps the delete-everything confirmation button mobile-safe", () => {
-    expect(profilePageSource).toContain('"Yes, Delete Everything"');
+    expect(profilePageSource).toMatch(/['"]Yes,\s*Delete\s*Everything['"]/);
     expect(profilePageSource).toContain("!whitespace-normal");
     expect(profilePageSource).toContain("min-h-10");
     expect(profilePageSource).toContain("sm:min-w-[12rem]");
