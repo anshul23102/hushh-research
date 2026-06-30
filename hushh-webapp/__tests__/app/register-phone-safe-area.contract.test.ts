@@ -3,12 +3,14 @@ import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
+const readSource = () => readFileSync(
+  join(process.cwd(), "app/register-phone/page.tsx"),
+  "utf8",
+).replace(/\r\n/g, "\n");
+
 describe("/register-phone safe-area shell contract", () => {
   it("uses centered dynamic viewport height and native safe-area padding variables", () => {
-    const source = readFileSync(
-      join(process.cwd(), "app/register-phone/page.tsx"),
-      "utf8",
-    );
+    const source = readSource();
 
     expect(source).toContain("--phone-mandate-safe-pt");
     expect(source).toContain("--phone-mandate-safe-pb");
@@ -25,14 +27,11 @@ describe("/register-phone safe-area shell contract", () => {
   });
 
   it("exposes a signed-in sign-out escape without account deletion", () => {
-    const source = readFileSync(
-      join(process.cwd(), "app/register-phone/page.tsx"),
-      "utf8",
-    );
+    const source = readSource();
 
-    expect(source).toContain('aria-label="Account actions"');
+    expect(source).toMatch(/aria-label\s*=\s*['"]Account\s*actions['"]/);
     expect(source).toContain("Sign out");
-    expect(source).toContain("signOut({ redirectTo: ROUTES.HOME })");
+    expect(source).toMatch(/signOut\(\s*\{\s*redirectTo:\s*ROUTES\.HOME\s*\}\s*\)/);
     expect(source).toContain("setOnboardingRequiredCookie(false)");
     expect(source).toContain("setOnboardingFlowActiveCookie(false)");
     expect(source).not.toContain("Delete account");
