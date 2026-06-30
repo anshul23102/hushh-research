@@ -6,19 +6,19 @@ import { describe, expect, it } from "vitest";
 const profilePageSource = readFileSync(
   join(process.cwd(), "app/profile/page.tsx"),
   "utf8",
-);
+).replace(/\r\n/g, "\n");
 
 describe("profile workspace duplication contract", () => {
   it("keeps One dashboard workspaces out of the Profile landing screen", () => {
     expect(profilePageSource).not.toContain('<SettingsGroup title="Workspaces">');
-    expect(profilePageSource).not.toContain(
-      "const openMyDataPanel = () => router.push(ROUTES.PKM);",
+    expect(profilePageSource).not.toMatch(
+      /const\s+openMyDataPanel\s*=\s*\(\)\s*=>\s*router\.push\(\s*ROUTES\.PKM\s*\);/,
     );
-    expect(profilePageSource).not.toContain(
-      "const openAccessPanel = () => router.push(ROUTES.CONSENTS);",
+    expect(profilePageSource).not.toMatch(
+      /const\s+openAccessPanel\s*=\s*\(\)\s*=>\s*router\.push\(\s*ROUTES\.CONSENTS\s*\);/,
     );
-    expect(profilePageSource).not.toContain(
-      "const openGmailPanel = () => router.push(ROUTES.GMAIL);",
+    expect(profilePageSource).not.toMatch(
+      /const\s+openGmailPanel\s*=\s*\(\)\s*=>\s*router\.push\(\s*ROUTES\.GMAIL\s*\);/,
     );
     expect(profilePageSource).toContain('<SettingsGroup title="Settings">');
     expect(profilePageSource).not.toContain("myDataRootBadge");
@@ -31,11 +31,11 @@ describe("profile workspace duplication contract", () => {
 
   it("loads legacy workspace data only for legacy workspace panels", () => {
     expect(profilePageSource).toContain("function profileRouteNeedsWorkspaceData");
-    expect(profilePageSource).toContain(
-      'return panel === "my-data" || panel === "access";',
+    expect(profilePageSource).toMatch(
+      /return\s+panel\s*===\s*['"]my-data['"]\s*\|\|\s*panel\s*===\s*['"]access['"];/,
     );
-    expect(profilePageSource).toContain(
-      "enabled: Boolean(user?.uid) && !authLoading && activePanel === \"gmail\"",
+    expect(profilePageSource).toMatch(
+      /enabled:\s*Boolean\(\s*user\?\.uid\s*\)\s*&&\s*!authLoading\s*&&\s*activePanel\s*===\s*['"]gmail['"]/,
     );
   });
 });
