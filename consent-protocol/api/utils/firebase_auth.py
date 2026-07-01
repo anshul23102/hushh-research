@@ -23,7 +23,7 @@ def verify_firebase_bearer(authorization: Optional[str]) -> str:
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Missing Authorization header")
 
-    configured, _ = ensure_firebase_auth_admin()
+    configured, project_id = ensure_firebase_auth_admin()
     if not configured:
         # Backend misconfiguration (common in local dev)
         raise HTTPException(status_code=500, detail="Firebase Admin not configured")
@@ -40,6 +40,17 @@ def verify_firebase_bearer(authorization: Optional[str]) -> str:
         uid = decoded.get("uid")
         if not isinstance(uid, str) or not uid:
             raise HTTPException(status_code=401, detail="Invalid Firebase ID token")
+
+        # Rigorous audience (aud) and issuer (iss) validation to prevent cross-tenant/project replays
+        if project_id:
+            aud = decoded.get("aud")
+            if aud != project_id:
+                raise HTTPException(status_code=401, detail="Invalid Firebase ID token audience")
+            iss = decoded.get("iss")
+            expected_iss = f"https://securetoken.google.com/{project_id}"
+            if iss != expected_iss:
+                raise HTTPException(status_code=401, detail="Invalid Firebase ID token issuer")
+
         return uid
     except HTTPException:
         raise

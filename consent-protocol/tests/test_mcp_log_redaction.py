@@ -140,13 +140,13 @@ def test_sensitive_log_filter_preserves_format_args_after_template_redaction() -
         pathname=__file__,
         lineno=1,
         msg="models=%s enabled=%s timeout=%s",
-        args=(["gpt-4o-mini-transcribe"], True, 20.0),
+        args=(["gpt-4o"], True, 20.0),
         exc_info=None,
     )
 
     assert SensitiveLogFilter().filter(record)
 
-    assert "models=['gpt-4o-mini-transcribe'] enabled=True timeout=20.0" == record.getMessage()
+    assert "models=['gpt-4o'] enabled=True timeout=20.0" == record.getMessage()
 
 
 def test_sensitive_log_record_factory_redacts_third_party_logs() -> None:
