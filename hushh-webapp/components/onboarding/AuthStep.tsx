@@ -145,7 +145,9 @@ export function AuthStep({
         const identity =
           routeUser?.uid === userId
             ? await AccountIdentityService.syncCurrentUser(routeUser).catch((error) => {
-                console.warn("[AuthStep] Failed to sync account identity:", error);
+                if (process.env.NODE_ENV !== "production") {
+                  console.warn("[AuthStep] Failed to sync account identity:", error);
+                }
                 return null;
               })
             : null;
@@ -171,7 +173,9 @@ export function AuthStep({
         setOnboardingFlowActiveCookie(nextPath === ROUTES.KAI_IMPORT);
         router.push(nextPath);
       } catch (error) {
-        console.warn("[AuthStep] Failed to resolve post-auth route:", error);
+        if (process.env.NODE_ENV !== "production") {
+          console.warn("[AuthStep] Failed to resolve post-auth route:", error);
+        }
         const fallbackPath = redirectPath || ROUTES.KAI_HOME;
         const safeFallbackPath =
           fallbackPath === ROUTES.ONE_ONBOARDING || fallbackPath === ROUTES.KAI_IMPORT
@@ -196,7 +200,9 @@ export function AuthStep({
       console.error(label, error);
       return;
     }
-    console.error(label);
+    if (process.env.NODE_ENV !== "production") {
+      console.error(label);
+    }
   };
 
   useEffect(() => {
