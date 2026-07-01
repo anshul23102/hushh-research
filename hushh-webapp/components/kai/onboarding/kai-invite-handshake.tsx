@@ -122,6 +122,11 @@ export function KaiInviteHandshake({ inviteToken }: { inviteToken: string }) {
     }
   }
 
+  function copyInviteLink() {
+    if (typeof window === "undefined" || !navigator.clipboard) return;
+    void navigator.clipboard.writeText(window.location.href);
+  }
+
   if (loading) {
     return <HushhLoader label="Loading invite..." variant="fullscreen" />;
   }
@@ -174,6 +179,13 @@ export function KaiInviteHandshake({ inviteToken }: { inviteToken: string }) {
                   Kai works in the background to connect you and your advisor
                   without exposing more than you approve.
                 </p>
+                <button
+                  type="button"
+                  onClick={copyInviteLink}
+                  className="mt-5 inline-flex min-h-10 items-center justify-center rounded-full border border-border px-4 text-sm font-medium text-foreground"
+                >
+                  Copy invite link
+                </button>
               </>
             ) : null}
 
