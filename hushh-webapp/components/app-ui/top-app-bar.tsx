@@ -506,7 +506,9 @@ export function TopAppBar({ className }: TopAppBarProps) {
         }
         router.push(nextRoute);
       } catch (error) {
-        console.error("[TopAppBar] Failed to switch persona:", error);
+        if (process.env.NODE_ENV !== "production") {
+          console.error("[TopAppBar] Failed to switch persona:", error);
+        }
         trackEvent("persona_switched", {
           action: target,
           result: "error",
