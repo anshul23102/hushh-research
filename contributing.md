@@ -14,12 +14,7 @@ cd hushh-research
 
 If you can run that flow and understand the trust model below, you have enough context to contribute.
 
-Choose the narrowest lane that matches the work:
-
-- app contributor: stay in the monorepo root and use `./bin/hushh web` with `./bin/hushh terminal backend --mode local --reload`
-- backend contributor: stay in the monorepo root and use `./bin/hushh terminal backend --mode local --reload`
-- standalone backend contributor: use the aligned path in [consent-protocol/README.md](./consent-protocol/README.md)
-- maintainer/operator: use [docs/reference/operations/README.md](./docs/reference/operations/README.md)
+Choose the narrowest lane: **app** (use `./bin/hushh web`), **backend** (use `./bin/hushh terminal backend`), **standalone** (see [consent-protocol/README.md](./consent-protocol/README.md)), or **maintainer** (see [docs/reference/operations/README.md](./docs/reference/operations/README.md)).
 
 ## The Product Contract
 
@@ -90,11 +85,7 @@ Everything else is either deeper reference or maintainer/operator material.
 
 ## Maintainer-Only Complexity
 
-The repo still contains maintainer concerns such as:
-
-- subtree synchronization for `consent-protocol/`
-- release/migration governance
-- deep operator scripts
+The repo still contains maintainer concerns such as subtree sync for `consent-protocol/`, release/migration governance, and deep operator scripts.
 
 Those are real, but they are not part of the normal first-PR path. If you need them, use the maintainer docs under `docs/reference/operations/`.
 
@@ -118,6 +109,15 @@ cd hushh-webapp && npm run verify:docs
 ```
 
 Commit signoff: `git commit -s`
+
+If DCO check fails, amend:
+
+```bash
+git commit --amend --signoff --no-edit
+git push --force-with-lease
+```
+
+Use `--force-with-lease` on your branch only.
 
 ## Naming Policy
 
