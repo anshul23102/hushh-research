@@ -157,8 +157,7 @@ export function VaultLockGuard({ children }: VaultLockGuardProps) {
           vaultPresenceCache.set(userId, exists);
           setHasVault(exists);
         }
-      } catch (error) {
-        console.warn("[VaultLockGuard] Failed to check vault existence:", error);
+      } catch (_error) {
         if (!cancelled) {
           // Fail closed on transient check failures to preserve existing secure behavior.
           vaultPresenceCache.set(userId, true);
