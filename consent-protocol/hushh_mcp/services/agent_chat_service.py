@@ -427,15 +427,38 @@ def create_runtime_client(runtime_provider: str, user_key: str):
     raise ValueError(f"Unsupported runtime provider: {provider}")
 
 
-def create_managed_runtime_client(runtime_provider: str, user_key: str):
+def create_managed_runtime_client(
+    runtime_provider: str,
+    *,
+    project: str | None = None,
+    location: str | None = None,
+):
     provider = runtime_provider.strip().lower()
-    key = user_key.strip()
 
-    if not key:
-        raise RuntimeError("Managed Gemini API key is not configured")
+    resolved_project = (
+        project
+        or os.getenv("GOOGLE_CLOUD_PROJECT")
+        or os.getenv("GCP_PROJECT")
+    )
+    
+    if resolved_project:
+        resolved_project = resolved_project.strip()
+
+    resolved_location = (
+        location
+        or os.getenv("GOOGLE_CLOUD_LOCATION")
+        or os.getenv("GCP_LOCATION")
+        or os.getenv("GOOGLE_CLOUD_REGION")
+        or "us-central1"
+    )
+    resolved_location = resolved_location.strip()
 
     if provider == "gemini":
-        return genai.Client(vertexai=True, api_key=key)
+        return genai.Client(
+            vertexai=True,
+            project=resolved_project,
+            location=resolved_location,
+        )
 
     raise ValueError(f"Unsupported runtime provider: {provider}")
 
@@ -838,12 +861,8 @@ class AgentChatService:
     @property
     def client(self):
         if self._client is None:
-            api_key = self.settings.google_api_key or os.getenv("GOOGLE_API_KEY", "").strip()
-            if not api_key:
-                raise RuntimeError("Gemini API key is not configured")
             self._client = create_managed_runtime_client(
                 runtime_provider=self.runtime_manifest.model.provider,
-                user_key=api_key,
             )
         return self._client
 
