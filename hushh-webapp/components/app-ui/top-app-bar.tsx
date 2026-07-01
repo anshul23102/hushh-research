@@ -887,7 +887,9 @@ function OnboardingRouteActions() {
       await signOut();
       router.push(ROUTES.HOME);
     } catch (error) {
-      console.error("[TopAppBar] Failed to delete account:", error);
+      if (process.env.NODE_ENV !== "production") {
+        console.error("[TopAppBar] Failed to delete account:", error);
+      }
       toast.error("Failed to delete account. Please retry.");
     } finally {
       setIsDeleting(false);
