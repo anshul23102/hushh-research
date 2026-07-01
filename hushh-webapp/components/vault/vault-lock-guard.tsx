@@ -28,6 +28,7 @@ import { VaultService } from "@/lib/services/vault-service";
 import { VaultUnlockDialog } from "./vault-unlock-dialog";
 import { HushhLoader } from "@/components/app-ui/hushh-loader";
 import { useStepProgress } from "@/lib/progress/step-progress-context";
+import { ROUTES } from "@/lib/navigation/routes";
 import {
   isSessionUnlockedOnce,
   markSessionUnlocked,
@@ -97,7 +98,7 @@ export function VaultLockGuard({ children }: VaultLockGuardProps) {
 
     if (typeof window !== "undefined") {
       const currentPath = window.location.pathname;
-      router.replace(`/login?redirect=${encodeURIComponent(currentPath)}`);
+      router.replace(`${ROUTES.LOGIN}?redirect=${encodeURIComponent(currentPath)}`);
     }
   }, [authLoading, router, userId]);
 
