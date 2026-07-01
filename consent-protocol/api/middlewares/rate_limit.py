@@ -42,7 +42,7 @@ def get_rate_limit_key(request: Request) -> str:
             if valid and payload and payload.user_id:
                 return f"user:{payload.user_id}"
 
-    return get_remote_address(request)
+    return str(get_remote_address(request))
 
 
 # Initialize limiter with custom key function

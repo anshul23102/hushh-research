@@ -27,10 +27,11 @@ import json
 import logging
 import sys
 import time
+from typing import Any
 
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
-from mcp.types import TextContent
+from mcp.types import Resource, TextContent, Tool
 
 from mcp_modules import resources as mcp_resources
 
@@ -126,7 +127,7 @@ HANDLERS = {
 
 
 @server.list_tools()
-async def list_tools():
+async def list_tools() -> list[Tool]:
     """Expose Hussh consent tools to MCP hosts."""
     allowed_tool_names = set(get_current_visible_tool_names())
     return get_tool_definitions(allowed_tool_names=allowed_tool_names)
@@ -138,7 +139,7 @@ async def list_tools():
 
 
 @server.call_tool()
-async def call_tool(name: str, arguments: dict) -> list[TextContent]:
+async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
     """
     Route tool calls to appropriate handlers.
 
@@ -201,13 +202,13 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
 
 
 @server.list_resources()
-async def list_resources():
+async def list_resources() -> list[Resource]:
     """List available MCP resources."""
     return await mcp_resources.list_resources()
 
 
 @server.read_resource()
-async def read_resource(uri: str):
+async def read_resource(uri: str) -> str | bytes:
     """Read MCP resource content by URI."""
     return await mcp_resources.read_resource(uri)
 
@@ -217,7 +218,7 @@ async def read_resource(uri: str):
 # ============================================================================
 
 
-async def main():
+async def main() -> None:
     """
     Run the Hussh MCP Server.
 
