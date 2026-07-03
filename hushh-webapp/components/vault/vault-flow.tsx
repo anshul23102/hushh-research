@@ -230,8 +230,8 @@ export function VaultFlow({
             setVaultMode(vaultData.primaryMethod);
             setUnlockWithPassphraseFallback(false);
           }
-        } catch (metadataError) {
-          console.warn("Vault mode detection failed, defaulting to passphrase:", metadataError);
+        } catch {
+          // Vault mode detection error is handled implicitly below
           setVaultMode("passphrase");
           setAvailableGeneratedMethod(null);
           setUnlockWithPassphraseFallback(false);
@@ -239,7 +239,7 @@ export function VaultFlow({
         }
         setStep("unlock");
       } catch (err) {
-        console.error("Vault status check failed:", err);
+        // Vault status check error is handled implicitly below
         const errorCode =
           typeof (err as { code?: unknown } | null | undefined)?.code === "string"
             ? (err as { code: string }).code
