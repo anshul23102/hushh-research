@@ -1306,7 +1306,6 @@ export function KaiFlow({
         if (resumeError instanceof Error && resumeError.name === "AbortError") {
           return;
         }
-        console.warn("[KaiFlow] Failed to resume import stream:", resumeError);
       } finally {
         abortControllerRef.current = null;
         resumeImportStreamInFlightRef.current = false;
@@ -1357,7 +1356,6 @@ export function KaiFlow({
             );
           })
           .catch((syncError) => {
-            console.warn("[KaiFlow] Deferred onboarding sync failed after save:", syncError);
             AppBackgroundTaskService.failTask(
               taskId,
               syncError instanceof Error ? syncError.message : "Sync failed",
@@ -1365,9 +1363,7 @@ export function KaiFlow({
             );
           });
       })
-      .catch((pendingError) => {
-        console.warn("[KaiFlow] Failed to preflight profile sync state:", pendingError);
-      });
+      .catch(() => {});
   }, [effectiveVaultOwnerToken, userId, vaultKey]);
 
   useEffect(() => {
@@ -1430,8 +1426,7 @@ export function KaiFlow({
       const status = resource?.plaidStatus ?? null;
       setPlaidStatus(status);
       return status;
-    } catch (plaidError) {
-      console.warn("[KaiFlow] Failed to load Plaid status:", plaidError);
+    } catch {
       setPlaidStatus(null);
       return null;
     }
@@ -1538,10 +1533,6 @@ export function KaiFlow({
       return;
     }
 
-    if (financialResourceError) {
-      console.warn("[KaiFlow] Shared financial resource failed:", financialResourceError);
-    }
-
     invalidateDomain(userId, "financial");
     setFlowData({ hasFinancialData: false });
     if (isDashboardMode) {
@@ -1624,8 +1615,7 @@ export function KaiFlow({
       let tokenForImport = effectiveVaultOwnerToken;
       try {
         tokenForImport = await forceRefreshVaultOwnerToken(tokenForImport);
-      } catch (tokenError) {
-        console.warn("[KaiFlow] Failed to refresh VAULT_OWNER token before import:", tokenError);
+      } catch {
         const message = "Your session needs refresh. Please sign in again.";
         setError(message);
         toast.error(message);
@@ -1869,9 +1859,7 @@ export function KaiFlow({
               });
             }
           }
-        } catch (activeRunError) {
-          console.warn("[KaiFlow] Active run pre-cancel check failed:", activeRunError);
-        }
+        } catch {}
 
         setState("importing");
         setError(null);
@@ -2772,11 +2760,7 @@ export function KaiFlow({
         runId,
         userId,
         vaultOwnerToken: effectiveVaultOwnerToken,
-      }).catch((cancelError) => {
-        if (process.env.NODE_ENV !== "production") {
-          console.warn("[KaiFlow] Failed to cancel import run on backend:", cancelError);
-        }
-      });
+      }).catch(() => {});
     }
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
