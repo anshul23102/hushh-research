@@ -289,7 +289,6 @@ export function PhoneVerificationFlow({
           resendCode ? "A new verification code has been sent." : "Verification code sent."
         );
       } catch (error) {
-        console.error("[PhoneVerificationFlow] Failed to start verification:", error);
         trackEvent("phone_verification_started", {
           action: mode,
           result: "error",
