@@ -248,8 +248,8 @@ export function KaiOnboardingGuard({ children }: { children: React.ReactNode }) 
             return;
           }
         }
-      } catch (error) {
-        console.warn("[KaiOnboardingGuard] Failed to check onboarding state:", error);
+      } catch {
+        // Handled gracefully by setting guard error state
         if (!cancelled) {
           setGuardError("Unable to load onboarding state. Please retry.");
         }
