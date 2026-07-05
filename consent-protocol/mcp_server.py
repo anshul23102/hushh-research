@@ -25,12 +25,12 @@ Modular architecture:
 import asyncio
 import json
 import logging
-import sys
 import time
+from typing import Any
 
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
-from mcp.types import TextContent
+from mcp.types import Resource, TextContent, Tool
 
 from mcp_modules import resources as mcp_resources
 
@@ -64,20 +64,35 @@ from mcp_modules.tools import (
     handle_list_marketplace_investors,
     handle_list_ria_profiles,
     handle_list_scopes,
+    handle_prepare_campaign_context,
     handle_request_consent,
     handle_validate_token,
+)
+from mcp_modules.tools.schemas import (
+    CheckConsentStatusSchema,
+    DelegateToAgentSchema,
+    DiscoverUserDomainsSchema,
+    EmptyArgsSchema,
+    GetEncryptedScopedExportSchema,
+    GetRiaClientAccessSummarySchema,
+    GetRiaProfileSchema,
+    GetRiaVerificationStatusSchema,
+    KaiAnalyzeStockSchema,
+    KaiOpenHistorySchema,
+    ListMarketplaceInvestorsSchema,
+    ListRiaProfilesSchema,
+    PrepareCampaignContextSchema,
+    RequestConsentSchema,
+    ValidateTokenSchema,
 )
 
 # ============================================================================
 # LOGGING CONFIGURATION
 # IMPORTANT: Only use stderr - stdout is reserved for JSON-RPC messages
 # ============================================================================
+from services.logging_config import configure_logging
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="[HUSHH-MCP] %(levelname)s: %(message)s",
-    stream=sys.stderr,  # CRITICAL: Don't pollute stdout
-)
+configure_logging(level="INFO", stream="ext://sys.stderr")
 install_sensitive_log_filter()
 logger = logging.getLogger("hushh-mcp-server")
 
@@ -90,6 +105,7 @@ server = Server("hushh-consent")
 
 HANDLERS = {
     # ── Consent / Privacy tools ───────────────────────────────────────────────
+    "prepare_campaign_context": handle_prepare_campaign_context,
     "request_consent": handle_request_consent,
     "validate_token": handle_validate_token,
     "get_encrypted_scoped_export": handle_get_encrypted_scoped_export,
@@ -117,6 +133,33 @@ HANDLERS = {
     "kai_cancel_active_analysis": handle_kai_cancel_active_analysis,
 }
 
+SCHEMA_MAP = {
+    "prepare_campaign_context": PrepareCampaignContextSchema,
+    "request_consent": RequestConsentSchema,
+    "validate_token": ValidateTokenSchema,
+    "get_encrypted_scoped_export": GetEncryptedScopedExportSchema,
+    "delegate_to_agent": DelegateToAgentSchema,
+    "list_scopes": EmptyArgsSchema,
+    "discover_user_domains": DiscoverUserDomainsSchema,
+    "check_consent_status": CheckConsentStatusSchema,
+    "list_ria_profiles": ListRiaProfilesSchema,
+    "get_ria_profile": GetRiaProfileSchema,
+    "list_marketplace_investors": ListMarketplaceInvestorsSchema,
+    "get_ria_verification_status": GetRiaVerificationStatusSchema,
+    "get_ria_client_access_summary": GetRiaClientAccessSummarySchema,
+    "kai_analyze_stock": KaiAnalyzeStockSchema,
+    "kai_open_dashboard": EmptyArgsSchema,
+    "kai_open_import": EmptyArgsSchema,
+    "kai_open_history": KaiOpenHistorySchema,
+    "kai_open_consent": EmptyArgsSchema,
+    "kai_open_profile": EmptyArgsSchema,
+    "kai_open_optimize": EmptyArgsSchema,
+    "kai_open_home": EmptyArgsSchema,
+    "kai_navigate_back": EmptyArgsSchema,
+    "kai_resume_active_analysis": EmptyArgsSchema,
+    "kai_cancel_active_analysis": EmptyArgsSchema,
+}
+
 
 # ============================================================================
 # TOOL DEFINITIONS
@@ -124,7 +167,7 @@ HANDLERS = {
 
 
 @server.list_tools()
-async def list_tools():
+async def list_tools() -> list[Tool]:
     """Expose Hussh consent tools to MCP hosts."""
     allowed_tool_names = set(get_current_visible_tool_names())
     return get_tool_definitions(allowed_tool_names=allowed_tool_names)
@@ -136,7 +179,7 @@ async def list_tools():
 
 
 @server.call_tool()
-async def call_tool(name: str, arguments: dict) -> list[TextContent]:
+async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
     """
     Route tool calls to appropriate handlers.
 
@@ -146,6 +189,26 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
     start_time = time.perf_counter()
     logger.info(f"🔧 Tool called: {name}")
     logger.info("   Arguments: %s", json.dumps(redact_mcp_arguments(arguments), default=str))
+
+    schema_cls = SCHEMA_MAP.get(name)
+    if schema_cls:
+        try:
+            validated_args = schema_cls.model_validate(arguments or {})
+            arguments = {k: v for k, v in validated_args.model_dump().items() if v is not None}
+        except Exception as ve:
+            logger.warning(f"❌ Argument validation failed for tool {name}: {ve}")
+            return [
+                TextContent(
+                    type="text",
+                    text=json.dumps(
+                        {
+                            "status": "error",
+                            "error": f"Invalid arguments: {str(ve)}",
+                            "tool": name,
+                        }
+                    ),
+                )
+            ]
 
     handler = HANDLERS.get(name)
     if not handler:
@@ -199,13 +262,13 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
 
 
 @server.list_resources()
-async def list_resources():
+async def list_resources() -> list[Resource]:
     """List available MCP resources."""
     return await mcp_resources.list_resources()
 
 
 @server.read_resource()
-async def read_resource(uri: str):
+async def read_resource(uri: str) -> str | bytes:
     """Read MCP resource content by URI."""
     return await mcp_resources.read_resource(uri)
 
@@ -215,7 +278,7 @@ async def read_resource(uri: str):
 # ============================================================================
 
 
-async def main():
+async def main() -> None:
     """
     Run the Hussh MCP Server.
 

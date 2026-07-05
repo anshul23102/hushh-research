@@ -41,7 +41,7 @@ def _parse_query_token(scope: dict[str, Any]) -> str:
     return ""
 
 
-async def _send_json(send, status_code: int, payload: dict[str, Any]) -> None:
+async def _send_json(send: Any, status_code: int, payload: dict[str, Any]) -> None:
     body = json.dumps(payload).encode("utf-8")
     headers = [(b"content-type", b"application/json"), (b"content-length", str(len(body)).encode())]
     await send({"type": "http.response.start", "status": status_code, "headers": headers})
@@ -52,7 +52,7 @@ class _StreamableHTTPASGIApp:
     def __init__(self, session_manager: StreamableHTTPSessionManager):
         self.session_manager = session_manager
 
-    async def __call__(self, scope, receive, send) -> None:
+    async def __call__(self, scope: dict[str, Any], receive: Any, send: Any) -> None:
         await self.session_manager.handle_request(scope, receive, send)
 
 
@@ -61,7 +61,7 @@ class AuthenticatedRemoteMCPApp:
         self._registry = DeveloperRegistryService()
         self._inner = _StreamableHTTPASGIApp(session_manager)
 
-    async def __call__(self, scope, receive, send) -> None:
+    async def __call__(self, scope: dict[str, Any], receive: Any, send: Any) -> None:
         if scope.get("type") != "http":
             await _send_json(send, 404, {"detail": "Not found"})
             return

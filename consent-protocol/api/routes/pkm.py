@@ -5,17 +5,7 @@ Personal Knowledge Model API routes.
 Canonical API surface for PKM.
 """
 
-from fastapi import (
-    APIRouter,
-    BackgroundTasks,
-    Body,
-    Depends,
-    Header,
-    HTTPException,
-    Path,
-    Query,
-    status,
-)
+from fastapi import APIRouter, BackgroundTasks, Body, Depends, Header, HTTPException, Path, status
 from pydantic import BaseModel, Field
 
 from api.middleware import require_firebase_auth, require_vault_owner_token
@@ -35,6 +25,7 @@ from api.routes.pkm_routes_shared import (
     UpdateUpgradeRunRequest,
     UpdateUpgradeStepRequest,
     UserScopesResponse,
+    _validated_segment_ids,
 )
 from api.routes.pkm_routes_shared import (
     complete_upgrade_run as _complete_upgrade_run,
@@ -120,11 +111,16 @@ async def require_pkm_metadata_access(
 
 
 class PKMAgentLabStructureRequest(BaseModel):
-    user_id: str
+    user_id: str = Field(min_length=1, max_length=128)
     message: str = Field(min_length=1, max_length=12000)
-    current_domains: list[str] = Field(default_factory=list)
-    current_manifests: list[dict] = Field(default_factory=list)
+    current_domains: list[str] = Field(default_factory=list, max_length=256)
+    current_manifests: list[dict] = Field(default_factory=list, max_length=256)
     simulated_state: dict | None = None
+    # Explicit field-update intent (domain + field_path + proposed_value). When
+    # present, routing and the confirm decision are derived deterministically
+    # from these structured slots instead of re-classifying a synthesized
+    # sentence with the LLM (GAP 1 fix — identity address updates).
+    update_intent: dict | None = None
 
 
 class PKMAgentLabStructureResponse(BaseModel):
@@ -179,7 +175,7 @@ async def get_encrypted_data(
 async def get_domain_data(
     user_id: str = Path(..., max_length=128),
     domain: str = Path(..., max_length=64),
-    segment_ids: list[str] | None = Query(default=None),
+    segment_ids: list[str] | None = Depends(_validated_segment_ids),
     token_data: dict = Depends(require_vault_owner_token),
 ):
     return await _get_domain_data(user_id, domain, segment_ids, token_data)
@@ -237,8 +233,8 @@ async def start_or_resume_upgrade(
 
 @router.post("/upgrade/runs/{run_id}/status", response_model=PkmUpgradeStatusResponse)
 async def update_upgrade_run_status(
-    run_id: str,
     request: UpdateUpgradeRunRequest,
+    run_id: str = Path(..., min_length=1, max_length=128),
     token_data: dict = Depends(require_vault_owner_token),
 ):
     return await _update_upgrade_run_status(run_id, request, token_data)
@@ -246,9 +242,9 @@ async def update_upgrade_run_status(
 
 @router.post("/upgrade/runs/{run_id}/steps/{domain}", response_model=PkmUpgradeStatusResponse)
 async def update_upgrade_step(
-    run_id: str,
-    domain: str,
     request: UpdateUpgradeStepRequest,
+    run_id: str = Path(..., min_length=1, max_length=128),
+    domain: str = Path(..., min_length=1, max_length=200),
     token_data: dict = Depends(require_vault_owner_token),
 ):
     return await _update_upgrade_step(run_id, domain, request, token_data)
@@ -256,8 +252,8 @@ async def update_upgrade_step(
 
 @router.post("/upgrade/runs/{run_id}/complete", response_model=PkmUpgradeStatusResponse)
 async def complete_upgrade_run(
-    run_id: str,
     request: StartOrResumeUpgradeRequest,
+    run_id: str = Path(..., min_length=1, max_length=128),
     token_data: dict = Depends(require_vault_owner_token),
 ):
     return await _complete_upgrade_run(run_id, request, token_data)
@@ -265,8 +261,8 @@ async def complete_upgrade_run(
 
 @router.post("/upgrade/runs/{run_id}/fail", response_model=PkmUpgradeStatusResponse)
 async def fail_upgrade_run(
-    run_id: str,
     request: UpdateUpgradeRunRequest,
+    run_id: str = Path(..., min_length=1, max_length=128),
     token_data: dict = Depends(require_vault_owner_token),
 ):
     return await _fail_upgrade_run(run_id, request, token_data)
@@ -312,5 +308,6 @@ async def preview_pkm_structure(
         current_domains=request.current_domains,
         current_manifests=request.current_manifests,
         simulated_state=request.simulated_state,
+        update_intent=request.update_intent,
     )
     return PKMAgentLabStructureResponse(**payload)

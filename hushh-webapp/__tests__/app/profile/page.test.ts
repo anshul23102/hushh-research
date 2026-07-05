@@ -1,4 +1,18 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+const mockSessionStorage = vi.hoisted(() => ({
+  store: {} as Record<string, string>,
+}));
+
+vi.mock("@/lib/utils/session-storage", () => ({
+  setSessionItem: vi.fn((key: string, value: string) => {
+    mockSessionStorage.store[key] = value;
+  }),
+  getSessionItem: vi.fn((key: string) => mockSessionStorage.store[key] || null),
+  removeSessionItem: vi.fn((key: string) => {
+    delete mockSessionStorage.store[key];
+  }),
+}));
 
 import {
   resolveGmailConnectionPresentation,
@@ -6,6 +20,11 @@ import {
   resolveGmailStatusSummary,
   resolveGmailSyncFeedback,
   sanitizeGmailUserMessage,
+  buildProfileGmailReturnPath,
+  stashProfileGmailReturnStatus,
+  consumeProfileGmailReturnStatus,
+  isRecoverableGmailOAuthReplayError,
+  resolveGmailConnectedLabel,
 } from "@/lib/profile/mail-flow";
 
 describe("resolveGmailSyncFeedback", () => {
@@ -242,7 +261,7 @@ describe("resolveGmailStatusSummary", () => {
       }),
     ).toMatchObject({
       tone: "success",
-      title: "Your receipts are up to date",
+      title: "Receipts are up to date",
       detail: "Connected to dev@hushh.ai",
     });
   });
@@ -261,5 +280,82 @@ describe("resolveGmailStatusSummary", () => {
     });
 
     expect(label).toMatch(/^Last updated /);
+  });
+});
+
+describe("resolveGmailConnectedLabel", () => {
+  it("uses custom email if provided", () => {
+    expect(
+      resolveGmailConnectedLabel({
+        configured: true,
+        connected: true,
+        status: "connected",
+        google_email: "test@hushh.ai",
+        scope_csv: "gmail.readonly",
+        last_sync_status: "completed",
+        auto_sync_enabled: true,
+        revoked: false,
+      }),
+    ).toBe("Connected to test@hushh.ai");
+  });
+
+  it("uses generic label if email is missing", () => {
+    expect(
+      resolveGmailConnectedLabel({
+        configured: true,
+        connected: true,
+        status: "connected",
+        scope_csv: "gmail.readonly",
+        last_sync_status: "completed",
+        auto_sync_enabled: true,
+        revoked: false,
+      }),
+    ).toBe("Connected to your Gmail");
+  });
+});
+
+describe("buildProfileGmailReturnPath", () => {
+  it("resolves the correct profile return path with search parameters", () => {
+    expect(buildProfileGmailReturnPath()).toBe("/profile?panel=gmail");
+  });
+});
+
+describe("profile Gmail OAuth session stash", () => {
+  it("saves, consumes, and purges return status on session storage", () => {
+    const status = {
+      configured: true,
+      connected: true,
+      status: "connected",
+      google_email: "oauth-user@hushh.ai",
+      scope_csv: "gmail.readonly",
+      last_sync_status: "completed",
+      auto_sync_enabled: true,
+      revoked: false,
+    } as any;
+
+    stashProfileGmailReturnStatus(status);
+    expect(mockSessionStorage.store["profile_gmail_oauth_return_status"]).toBe(
+      JSON.stringify(status)
+    );
+
+    const consumed = consumeProfileGmailReturnStatus();
+    expect(consumed).toEqual(status);
+    expect(mockSessionStorage.store["profile_gmail_oauth_return_status"]).toBeUndefined();
+  });
+
+  it("returns null if return status is not present or invalid", () => {
+    expect(consumeProfileGmailReturnStatus()).toBeNull();
+
+    mockSessionStorage.store["profile_gmail_oauth_return_status"] = "{invalid json";
+    expect(consumeProfileGmailReturnStatus()).toBeNull();
+  });
+});
+
+describe("isRecoverableGmailOAuthReplayError", () => {
+  it("correctly identifies recoverable replay errors", () => {
+    expect(isRecoverableGmailOAuthReplayError("oauth state expired")).toBe(true);
+    expect(isRecoverableGmailOAuthReplayError("invalid oauth state token")).toBe(true);
+    expect(isRecoverableGmailOAuthReplayError(new Error("code has already been used"))).toBe(true);
+    expect(isRecoverableGmailOAuthReplayError("some normal error")).toBe(false);
   });
 });

@@ -6,9 +6,11 @@ Modular architecture with routes organized in api/routes/ directory.
 Run with: uvicorn server:app --reload --port 8000
 """
 
+import asyncio
 import logging
 import os
 import time
+from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request  # noqa: E402
 from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
@@ -16,12 +18,18 @@ from fastapi.responses import JSONResponse, RedirectResponse  # noqa: E402
 
 from hushh_mcp.runtime_settings import get_app_runtime_settings  # noqa: E402
 from mcp_modules.log_redaction import install_sensitive_log_filter  # noqa: E402
+from services.logging_config import RequestContextMiddleware, configure_logging
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
+configure_logging(level="INFO")
 install_sensitive_log_filter()
 logger = logging.getLogger(__name__)
 _APP_RUNTIME_SETTINGS = get_app_runtime_settings()
+_STARTUP_BACKGROUND_TASKS: set[asyncio.Task[None]] = set()
+
+
+def _track_startup_background_task(task: asyncio.Task[None]) -> None:
+    _STARTUP_BACKGROUND_TASKS.add(task)
+    task.add_done_callback(_STARTUP_BACKGROUND_TASKS.discard)
 
 
 def _env_truthy(name: str, fallback: str = "false") -> bool:
@@ -99,12 +107,14 @@ from slowapi.errors import RateLimitExceeded  # noqa: E402
 
 from api.middlewares.observability import (  # noqa: E402
     configure_opentelemetry,
+    get_request_id,
     observability_middleware,
 )
 from api.middlewares.rate_limit import limiter  # noqa: E402
 from api.routes import (  # noqa: E402
     account,
     agents,
+    connected_systems,
     consent,
     db_proxy,
     debug_firebase,
@@ -116,6 +126,7 @@ from api.routes import (  # noqa: E402
 )
 from db.connection import DatabaseUnavailableError  # noqa: E402
 from db.db_client import DatabaseExecutionError  # noqa: E402
+from hushh_mcp.consent.errors import PolicyViolationError, ZKPVerificationError  # noqa: E402
 
 # Dynamic root_path for Swagger docs in production
 # Set ROOT_PATH env var to your production URL to fix Swagger showing localhost
@@ -127,6 +138,8 @@ app = FastAPI(
     version="1.0.0",
     root_path=root_path,
 )
+
+app.add_middleware(RequestContextMiddleware)
 
 app.middleware("http")(observability_middleware)
 
@@ -153,7 +166,9 @@ def _database_error_payload(
 
 
 @app.exception_handler(DatabaseUnavailableError)
-async def database_unavailable_exception_handler(_request: Request, exc: DatabaseUnavailableError):
+async def database_unavailable_exception_handler(
+    _request: Request, exc: DatabaseUnavailableError
+) -> JSONResponse:
     return JSONResponse(
         status_code=exc.status_code,
         content=_database_error_payload(
@@ -165,7 +180,9 @@ async def database_unavailable_exception_handler(_request: Request, exc: Databas
 
 
 @app.exception_handler(DatabaseExecutionError)
-async def database_execution_exception_handler(_request: Request, exc: DatabaseExecutionError):
+async def database_execution_exception_handler(
+    _request: Request, exc: DatabaseExecutionError
+) -> JSONResponse:
     status_code = getattr(exc, "status_code", 500)
     return JSONResponse(
         status_code=status_code,
@@ -175,6 +192,43 @@ async def database_execution_exception_handler(_request: Request, exc: DatabaseE
             hint=getattr(exc, "hint", None),
         ),
     )
+
+
+def _consent_error_payload(exc: Exception, request: Request) -> dict:
+    """Build a privacy-safe 403 payload for consent-domain errors.
+
+    trace_id comes from request.state (set by observability_middleware) so
+    the caller can correlate the response with server-side logs.
+    Integrated by Abdul Gaffar — canonical error-boundary mapping.
+    """
+    trace_id = getattr(request.state, "request_id", None) or get_request_id()
+    return {
+        "status": "error",
+        "message": str(getattr(exc, "message", exc)),
+        "trace_id": trace_id,
+    }
+
+
+@app.exception_handler(PolicyViolationError)
+async def policy_violation_handler(request: Request, exc: PolicyViolationError):
+    trace_id = getattr(request.state, "request_id", None) or get_request_id()
+    logger.warning(
+        "consent.policy_violation code=%s trace=%s",
+        exc.code,
+        trace_id,
+    )
+    return JSONResponse(status_code=403, content=_consent_error_payload(exc, request))
+
+
+@app.exception_handler(ZKPVerificationError)
+async def zkp_verification_handler(request: Request, exc: ZKPVerificationError):
+    trace_id = getattr(request.state, "request_id", None) or get_request_id()
+    logger.warning(
+        "consent.zkp_verification_failed code=%s trace=%s",
+        exc.code,
+        trace_id,
+    )
+    return JSONResponse(status_code=403, content=_consent_error_payload(exc, request))
 
 
 # CORS allowlist: explicit origins only (no wildcard regex).
@@ -223,6 +277,9 @@ app.include_router(health.router)
 
 # Agent chat routes (/api/agents/...)
 app.include_router(agents.router)
+
+# Profile Connected Systems routes (/api/connected-systems/...)
+app.include_router(connected_systems.router)
 
 # Consent management routes (/api/consent/...)
 app.include_router(consent.router)
@@ -555,9 +612,18 @@ async def startup_market_cache_store_table():
 
 @app.on_event("startup")
 async def startup_market_insights_refresh():
-    """Warm shared market caches, then keep them refreshed in the background."""
-    await warm_market_insights_startup_once()
-    start_market_insights_background_refresh()
+    """Warm shared market caches without blocking health or user traffic."""
+
+    async def _warm_then_refresh() -> None:
+        await warm_market_insights_startup_once()
+        start_market_insights_background_refresh()
+
+    _track_startup_background_task(
+        asyncio.create_task(
+            _warm_then_refresh(),
+            name="market-insights-startup-warm",
+        )
+    )
 
 
 @app.on_event("startup")
@@ -589,7 +655,7 @@ def _require_debug_access() -> None:
 
 
 @app.get("/debug/diagnostics", tags=["Debug"])
-async def diagnostics():
+async def diagnostics() -> dict[str, Any]:
     """List all registered routes to debug 404s."""
     _require_debug_access()
     routes = []
@@ -612,13 +678,46 @@ async def diagnostics():
 
 
 @app.get("/debug/consent-listener", tags=["Debug"])
-async def debug_consent_listener():
+async def debug_consent_listener() -> dict[str, Any]:
     """Consent NOTIFY listener status: listener_active, queue_count, notify_received_count.
     Use to confirm the listener is running and that NOTIFY is being received."""
     _require_debug_access()
     from api.consent_listener import get_consent_listener_status
 
     return get_consent_listener_status()
+
+
+@app.on_event("startup")
+async def startup_consent_revocation_worker() -> None:
+    """Start the background consent-expiry revocation sweep.
+
+    Registers ConsentRevocationWorker via start_revocation_loop so that
+    expired consent records are marked REVOKED in the database automatically.
+    The worker is decoupled from the DB through injected async callables so
+    the server starts cleanly even when the DB is temporarily unreachable.
+
+    Canonical attach point: hushh_mcp/services/revocation_worker.py
+    Integrated by Abdul Gaffar — canonical temporal-consent boundary.
+    """
+    try:
+        from hushh_mcp.services.consent_db import ConsentDBService
+        from hushh_mcp.services.revocation_worker import start_revocation_loop
+
+        _db = ConsentDBService()
+
+        start_revocation_loop(
+            fetch_expired=_db.fetch_expired_consents,
+            revoke=_db.mark_consent_revoked,
+            interval_seconds=300,
+        )
+        logger.info("startup.consent_revocation_worker_registered interval_s=300")
+    except Exception as exc:
+        # Non-fatal: log and continue — per-request token validation still
+        # enforces expiry via validate_token(); the worker is a DB consistency aid.
+        logger.warning(
+            "startup.consent_revocation_worker_failed reason=%s",
+            exc,
+        )
 
 
 if __name__ == "__main__":

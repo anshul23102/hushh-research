@@ -2,28 +2,233 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+import pytest
+
 from hushh_mcp.services.agent_chat_service import (
     AGENT_SYSTEM_PROMPT,
-    DEFAULT_AGENT_CHAT_MODEL,
     AgentChatMessage,
     AgentChatService,
+    AgentRuntimeContractError,
+    RuntimeSecretSession,
+    create_managed_runtime_client,
+    create_runtime_client,
+)
+from hussh_sdk import (
+    ModelConfig,
+    PKMCredentialResolver,
+    prepare_runtime_credentials,
+    runtime_config,
 )
 
 
-def test_agent_chat_service_defaults_to_stable_gemini_model(monkeypatch, test_vault_key):
-    monkeypatch.delenv("AGENT_GEMINI_MODEL", raising=False)
-
+def test_agent_chat_service_uses_agent_yaml_model(test_vault_key):
     service = AgentChatService(vault_key_hex=test_vault_key)
 
-    assert service.model == DEFAULT_AGENT_CHAT_MODEL == "gemini-2.5-pro"
+    assert service.model == "gemini-2.5-flash"
 
 
-def test_agent_chat_service_allows_env_model_override(monkeypatch, test_vault_key):
-    monkeypatch.setenv("AGENT_GEMINI_MODEL", "gemini-2.5-flash")
+def test_agent_chat_service_ignores_env_model_override(monkeypatch, test_vault_key):
+    monkeypatch.setenv("AGENT_GEMINI_MODEL", "gemini-env-override")
 
     service = AgentChatService(vault_key_hex=test_vault_key)
 
     assert service.model == "gemini-2.5-flash"
+
+
+def test_agent_chat_runtime_contract_defaults_to_hushh_managed(test_vault_key):
+    service = AgentChatService(vault_key_hex=test_vault_key)
+
+    contract = service.prepare_runtime_contract()
+
+    assert contract.mode == "hushh_managed_vertex"
+    assert contract.credential_supplied is False
+
+
+def test_agent_chat_runtime_contract_accepts_byok_with_runtime_credential(test_vault_key):
+    service = AgentChatService(vault_key_hex=test_vault_key)
+
+    contract = service.prepare_runtime_contract(
+        runtime_credential=" USER_GEMINI_KEY ",
+        runtime_credential_mode="byok",
+    )
+
+    assert contract.mode == "byok"
+    assert contract.credential_supplied is True
+
+
+def test_agent_chat_runtime_contract_rejects_missing_byok_credential(test_vault_key):
+    service = AgentChatService(vault_key_hex=test_vault_key)
+
+    try:
+        service.prepare_runtime_contract(
+            runtime_credential=" ",
+            runtime_credential_mode="byok",
+        )
+    except AgentRuntimeContractError as error:
+        assert error.error_code == "AGENT_RUNTIME_CREDENTIAL_MISSING"
+        assert "Gemini key" in error.message
+    else:  # pragma: no cover - defensive assertion clarity
+        raise AssertionError("Expected AgentRuntimeContractError")
+
+
+def test_agent_chat_runtime_contract_rejects_invalid_mode(test_vault_key):
+    service = AgentChatService(vault_key_hex=test_vault_key)
+
+    try:
+        service.prepare_runtime_contract(
+            runtime_credential="USER_GEMINI_KEY",
+            runtime_credential_mode="unsupported",
+        )
+    except AgentRuntimeContractError as error:
+        assert error.error_code == "AGENT_RUNTIME_MODE_INVALID"
+        assert error.message == "Agent runtime credential mode is invalid."
+    else:  # pragma: no cover - defensive assertion clarity
+        raise AssertionError("Expected AgentRuntimeContractError")
+
+
+@pytest.mark.anyio
+async def test_agent_chat_service_prepares_byok_runtime_from_pkm_secret(
+    monkeypatch,
+    test_vault_key,
+    caplog,
+):
+    calls: list[dict] = []
+    sample_runtime_value = "_".join(["USER", "BYOK", "VALUE", "SHOULD", "NOT", "LEAK"])
+
+    def fake_client(**kwargs):
+        calls.append(kwargs)
+        return SimpleNamespace(kind="client")
+
+    monkeypatch.setenv("GOOGLE_API_KEY", "BACKEND_KEY_SHOULD_NOT_BE_USED")
+    monkeypatch.setattr("hushh_mcp.services.agent_chat_service.genai.Client", fake_client)
+    service = AgentChatService(vault_key_hex=test_vault_key)
+
+    prepared = await service.prepare_agent_runtime(
+        runtime_credential=sample_runtime_value,
+        runtime_credential_mode="byok",
+    )
+
+    assert prepared.mode == "byok"
+    assert prepared.model == "gemini-2.5-flash"
+    assert prepared.client.kind == "client"
+    assert calls == [{"vertexai": False, "api_key": sample_runtime_value}]
+    assert sample_runtime_value not in str(prepared.evidence)
+    assert sample_runtime_value not in caplog.text
+
+
+def test_create_runtime_client_uses_byok_key_without_env_fallback(monkeypatch):
+    calls: list[dict] = []
+    monkeypatch.setenv("GOOGLE_API_KEY", "BACKEND_KEY_SHOULD_NOT_BE_USED")
+    monkeypatch.setenv("GEMINI_API_KEY", "BACKEND_GEMINI_SHOULD_NOT_BE_USED")
+
+    def fake_client(**kwargs):
+        calls.append(kwargs)
+        return SimpleNamespace(kind="client")
+
+    monkeypatch.setattr("hushh_mcp.services.agent_chat_service.genai.Client", fake_client)
+
+    client = create_runtime_client("gemini", " USER_BYOK_KEY ")
+
+    assert client.kind == "client"
+    assert calls == [{"vertexai": False, "api_key": "USER_BYOK_KEY"}]
+
+
+def test_create_managed_runtime_client_project_fallback(monkeypatch):
+    calls: list[dict] = []
+    monkeypatch.setattr("hushh_mcp.services.agent_chat_service.genai.Client", lambda **k: calls.append(k) or SimpleNamespace(kind="client"))
+
+    # GOOGLE_CLOUD_PROJECT takes precedence
+    monkeypatch.setenv("GOOGLE_CLOUD_PROJECT", "proj-1")
+    monkeypatch.setenv("GCP_PROJECT", "proj-2")
+    create_managed_runtime_client("gemini")
+    assert calls[-1]["project"] == "proj-1"
+
+    # Falls back to GCP_PROJECT
+    monkeypatch.delenv("GOOGLE_CLOUD_PROJECT")
+    create_managed_runtime_client("gemini")
+    assert calls[-1]["project"] == "proj-2"
+
+
+def test_create_managed_runtime_client_location_fallback(monkeypatch):
+    calls: list[dict] = []
+    monkeypatch.setattr("hushh_mcp.services.agent_chat_service.genai.Client", lambda **k: calls.append(k) or SimpleNamespace(kind="client"))
+
+    # GOOGLE_CLOUD_LOCATION takes precedence
+    monkeypatch.setenv("GOOGLE_CLOUD_LOCATION", "loc-1")
+    monkeypatch.setenv("GCP_LOCATION", "loc-2")
+    monkeypatch.setenv("GOOGLE_CLOUD_REGION", "loc-3")
+    create_managed_runtime_client("gemini")
+    assert calls[-1]["location"] == "loc-1"
+
+    # Falls back to GCP_LOCATION
+    monkeypatch.delenv("GOOGLE_CLOUD_LOCATION")
+    create_managed_runtime_client("gemini")
+    assert calls[-1]["location"] == "loc-2"
+
+    # Falls back to GOOGLE_CLOUD_REGION
+    monkeypatch.delenv("GCP_LOCATION")
+    create_managed_runtime_client("gemini")
+    assert calls[-1]["location"] == "loc-3"
+
+    # Defaults to "us-central1"
+    monkeypatch.delenv("GOOGLE_CLOUD_REGION")
+    create_managed_runtime_client("gemini")
+    assert calls[-1]["location"] == "us-central1"
+
+
+@pytest.mark.anyio
+async def test_prepare_runtime_credentials_resolves_pkm_credential_without_raw_value_in_evidence():
+    sample_runtime_key = "USER_KEY_SHOULD_NOT_LEAK"
+    runtime = runtime_config(
+        "google_adk",
+        model=ModelConfig(
+            provider="gemini",
+            model="gemini-2.5-flash",
+            mode="byok",
+            credential_ref="pkm:runtime_secrets.llm.gemini_api_key",
+        ),
+    )
+
+    bundle = await prepare_runtime_credentials(
+        runtime,
+        resolver=PKMCredentialResolver(
+            RuntimeSecretSession(
+                "pkm:runtime_secrets.llm.gemini_api_key",
+                sample_runtime_key,
+            )
+        ),
+    )
+
+    assert bundle.credential is not None
+    assert bundle.credential.secret == sample_runtime_key
+    assert sample_runtime_key not in str(bundle.evidence)
+
+
+@pytest.mark.anyio
+async def test_prepare_runtime_credentials_fails_on_credential_ref_mismatch():
+    runtime = runtime_config(
+        "google_adk",
+        model=ModelConfig(
+            provider="gemini",
+            model="gemini-2.5-flash",
+            mode="byok",
+            credential_ref="pkm:runtime_secrets.llm.gemini_api_key",
+        ),
+    )
+
+    with pytest.raises(Exception) as exc_info:
+        await prepare_runtime_credentials(
+            runtime,
+            resolver=PKMCredentialResolver(
+                RuntimeSecretSession(
+                    "pkm:runtime_secrets.llm.other_api_key",
+                    "USER_KEY_SHOULD_NOT_LEAK",
+                )
+            ),
+        )
+
+    assert "No runtime credential resolved" in str(exc_info.value)
+    assert "USER_KEY_SHOULD_NOT_LEAK" not in str(exc_info.value)
 
 
 def test_agent_chat_service_decrypts_encrypted_conversation_and_message(test_vault_key):
@@ -172,6 +377,104 @@ def test_agent_chat_translates_gemini_function_call_to_pkm_add(test_vault_key):
     assert action_plan.slots == {}
     assert action_plan.message == "Checking PKM and saving what fits."
     assert action_plan.reason == "durable personal context"
+
+
+def test_agent_chat_translates_gemini_function_call_to_pkm_update(test_vault_key):
+    service = AgentChatService(model="gemini-2.5-pro", vault_key_hex=test_vault_key)
+
+    action_plan = service._action_plan_from_function_call(
+        SimpleNamespace(
+            id="gemini-call-4",
+            name="update_pkm",
+            args={
+                "domain": "identity",
+                "field_path": "address",
+                "proposed_value": "123 Main St, New York, NY, 10001",
+                "current_value": "456 Old Rd",
+            },
+        )
+    )
+
+    assert action_plan is not None
+    assert action_plan.call_id == "gemini-call-4"
+    assert action_plan.action_id == "pkm.update"
+    assert action_plan.execution == "frontend"
+    assert action_plan.slots == {
+        "domain": "identity",
+        "field_path": "address",
+        "proposed_value": "123 Main St, New York, NY, 10001",
+        "current_value": "456 Old Rd",
+    }
+
+
+def test_agent_chat_pkm_update_omitted_current_value_defaults_empty(test_vault_key):
+    service = AgentChatService(model="gemini-2.5-pro", vault_key_hex=test_vault_key)
+
+    action_plan = service._action_plan_from_function_call(
+        SimpleNamespace(
+            id="gemini-call-5",
+            name="update_pkm",
+            args={
+                "domain": "identity",
+                "field_path": "address",
+                "proposed_value": "123 Main St",
+            },
+        )
+    )
+
+    assert action_plan is not None
+    assert action_plan.action_id == "pkm.update"
+    assert action_plan.slots["current_value"] == ""
+
+
+def test_agent_chat_pkm_update_requires_domain_field_and_value(test_vault_key):
+    service = AgentChatService(model="gemini-2.5-pro", vault_key_hex=test_vault_key)
+
+    # Missing domain -> cannot target an update, returns None (no broken emit)
+    assert (
+        service._action_plan_from_function_call(
+            SimpleNamespace(
+                id="c",
+                name="update_pkm",
+                args={"field_path": "address", "proposed_value": "x"},
+            )
+        )
+        is None
+    )
+    # Missing field_path
+    assert (
+        service._action_plan_from_function_call(
+            SimpleNamespace(
+                id="c",
+                name="update_pkm",
+                args={"domain": "identity", "proposed_value": "x"},
+            )
+        )
+        is None
+    )
+    # Missing proposed_value
+    assert (
+        service._action_plan_from_function_call(
+            SimpleNamespace(
+                id="c",
+                name="update_pkm",
+                args={"domain": "identity", "field_path": "address"},
+            )
+        )
+        is None
+    )
+
+
+def test_agent_chat_regex_fallback_does_not_misroute_update_to_add(test_vault_key):
+    service = AgentChatService(model="gemini-2.5-pro", vault_key_hex=test_vault_key)
+
+    # The deterministic regex fallback cannot infer the PKM domain, so an
+    # "update my X" intent must NOT be silently routed to pkm.add (the add flow
+    # auto-saves to the wrong domain without confirmation). pkm.update is emitted
+    # only by the LLM function-call path, which receives PKM domain context.
+    action_plan = service.plan_action("Update my address in pkm to 123 Main St")
+
+    assert action_plan is None or action_plan.action_id != "pkm.add"
 
 
 def test_agent_chat_plans_safe_navigation_actions(test_vault_key):

@@ -31,7 +31,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    console.log("[API] Destroying session tokens");
+    if (process.env.NODE_ENV !== "production") {
+  console.log("[API] Destroying session tokens");
+}
 
     const response = await fetch(`${BACKEND_URL}/api/consent/logout`, {
       method: "POST",
@@ -40,20 +42,25 @@ export async function POST(request: NextRequest) {
     });
 
     if (!response.ok) {
-      const error = await response.text();
-      console.error("[API] Backend error:", error);
-      return NextResponse.json(
-        { error: "Failed to destroy session tokens" },
-        { status: response.status },
-      );
+      const errorPayload = await response
+        .json()
+        .catch(async () => ({
+          error: (await response.text().catch(() => "")) || "Failed to destroy session tokens",
+        }));
+      console.error("[API] Backend error:", response.status, errorPayload);
+      return NextResponse.json(errorPayload, { status: response.status });
     }
 
     const data = await response.json();
-    console.log("[API] Session tokens destroyed");
+    if (process.env.NODE_ENV !== "production") {
+  console.log("[API] Session tokens destroyed");
+}
 
     return NextResponse.json(data);
   } catch (error) {
-    console.error("[API] Logout error:", error);
+    if (process.env.NODE_ENV !== "production") {
+      console.error("[API] Logout error:", error);
+    } 
     return NextResponse.json(
       { error: "Internal server error" },
       { status: 500 },

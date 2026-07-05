@@ -28,6 +28,7 @@ import { VaultService } from "@/lib/services/vault-service";
 import { VaultUnlockDialog } from "./vault-unlock-dialog";
 import { HushhLoader } from "@/components/app-ui/hushh-loader";
 import { useStepProgress } from "@/lib/progress/step-progress-context";
+import { ROUTES } from "@/lib/navigation/routes";
 import {
   isSessionUnlockedOnce,
   markSessionUnlocked,
@@ -97,7 +98,7 @@ export function VaultLockGuard({ children }: VaultLockGuardProps) {
 
     if (typeof window !== "undefined") {
       const currentPath = window.location.pathname;
-      router.replace(`/login?redirect=${encodeURIComponent(currentPath)}`);
+      router.replace(`${ROUTES.LOGIN}?redirect=${encodeURIComponent(currentPath)}`);
     }
   }, [authLoading, router, userId]);
 
@@ -156,8 +157,7 @@ export function VaultLockGuard({ children }: VaultLockGuardProps) {
           vaultPresenceCache.set(userId, exists);
           setHasVault(exists);
         }
-      } catch (error) {
-        console.warn("[VaultLockGuard] Failed to check vault existence:", error);
+      } catch (_error) {
         if (!cancelled) {
           // Fail closed on transient check failures to preserve existing secure behavior.
           vaultPresenceCache.set(userId, true);
@@ -202,7 +202,7 @@ export function VaultLockGuard({ children }: VaultLockGuardProps) {
 
   // No user - redirect to login
   if (!user) {
-    return <HushhLoader label="Redirecting to login..." />;
+    return <HushhLoader label="Checking session..." />;
   }
 
   if (hasVault === null) {
