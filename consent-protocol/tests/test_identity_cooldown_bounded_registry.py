@@ -150,9 +150,7 @@ class TestIdentityCooldownBoundedRegistryCallProof:
             second = svc.schedule_sync_from_firebase(_FAKE_UID)
 
         assert first is True
-        assert second is False, (
-            "Cooldown registry must block immediate re-schedule for same UID"
-        )
+        assert second is False, "Cooldown registry must block immediate re-schedule for same UID"
 
     def test_expired_cooldown_allows_reschedule(self):
         """
@@ -233,7 +231,15 @@ class TestIdentityCooldownBoundedRegistryCallProof:
         import hushh_mcp.services.actor_identity_service as svc_mod
 
         src = inspect.getsource(svc_mod)
-        # The old pattern was: _IDENTITY_SYNC_COOLDOWN_UNTIL: dict[str, datetime] = {}
-        assert "dict[str, datetime] = {}" not in src, (
-            "Old unbounded dict pattern found - fix not applied"
+        # The old pattern was the module-level bare dict:
+        #   _IDENTITY_SYNC_COOLDOWN_UNTIL: dict[str, datetime] = {}
+        # Match the specific module-level binding, not the generic type
+        # annotation, so the registry's own internal ``self._data:
+        # dict[str, datetime] = {}`` does not trip a false positive.
+        assert "_IDENTITY_SYNC_COOLDOWN_UNTIL: dict[str, datetime] = {}" not in src, (
+            "Old unbounded module-level cooldown dict found - fix not applied"
+        )
+        # And prove the module-level store is bound to the bounded registry.
+        assert "_IDENTITY_SYNC_COOLDOWN_UNTIL = _CooldownRegistry()" in src, (
+            "Module-level cooldown store must be a _CooldownRegistry instance"
         )
