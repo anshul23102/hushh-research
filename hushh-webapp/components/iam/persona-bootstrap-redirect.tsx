@@ -116,10 +116,7 @@ export function PersonaBootstrapRedirect() {
 
       await switchPersona(targetPersona);
       router.replace(pathname);
-    } catch (error) {
-      if (process.env.NODE_ENV !== "production") {
-        console.error("[PersonaBootstrapRedirect] Failed to resolve route mismatch:", error);
-      }
+    } catch {
       toast.error("We couldn't switch roles right now. Please retry.");
     } finally {
       setResolving(null);
