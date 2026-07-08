@@ -153,8 +153,7 @@ async function copyText(value: string, label: string) {
       throw new Error("clipboard_unavailable");
     }
     toast.success(`${label} copied`);
-  } catch (error) {
-    console.error("[developers] copy failed", error);
+  } catch {
     toast.error(`Could not copy ${label.toLowerCase()}`);
   }
 }
@@ -1049,11 +1048,7 @@ export function DeveloperDocsHub({ initialOrigin = null }: { initialOrigin?: str
       setNativeUser(authResult.user);
       await checkAuth();
       await refreshAccess(authResult.user);
-    } catch (error) {
-      if (process.env.NODE_ENV !== "production") {
-        console.error(`[developers] ${provider} sign-in failed`, error);
-      }
-    }
+    } catch {}
   }
 
   async function handleEnableAccess() {
@@ -1136,8 +1131,7 @@ export function DeveloperDocsHub({ initialOrigin = null }: { initialOrigin?: str
       await signOut({ redirectTo: ROUTES.DEVELOPERS });
       setAccess(null);
       setRevealedToken(null);
-    } catch (error) {
-      console.error("[developers] sign out failed", error);
+    } catch {
       toast.error("Could not sign out");
     }
   }
