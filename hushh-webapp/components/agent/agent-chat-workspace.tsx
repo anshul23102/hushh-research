@@ -1532,9 +1532,8 @@ export function AgentChatWorkspace({
           voiceTtsSpeakingRef.current = false;
           resumeAgentVoiceCapture(voiceTurnEpoch);
         },
-        onError: (failure) => {
-          console.warn("[Agent voice] TTS failure", failure);
-          if (failure.stage === "fallback") {
+        onError: (_failure) => {
+          if (_failure.stage === "fallback") {
             if (!voiceTtsFailureReported) {
               voiceTtsFailureReported = true;
               addErrorMessage("Agent voice playback failed. The text response is still available.");
